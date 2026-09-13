@@ -24,7 +24,7 @@ resource "aws_mskconnect_connector" "this" {
     "tasks.max"                                 = "1"
     "database.hostname"                         = var.database_hostname
     "database.port"                             = "5432"
-    "database.user"                             = "$${secretsmanager:${var.secret_name}:user}"
+    "database.user"                             = "$${secretsmanager:${var.secret_name}:${var.secret_user_key}}"
     "database.password"                         = "$${secretsmanager:${var.secret_name}:password}"
     "database.dbname"                           = var.database_name
     "topic.prefix"                              = var.topic_prefix

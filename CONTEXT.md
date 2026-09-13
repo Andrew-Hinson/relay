@@ -40,4 +40,4 @@ A named relation this Config owns. Columns are DDL. A primary key is required. T
 A Config override for resource names, defaulting to the Config name. Topics use `{prefix}.{schema}.{table}`.
 
 **Instance Secret**:
-The Secrets Manager store named after the Instance. Org creates it. Apply retrieves it. Not in Config.
+The Secrets Manager store named after the Instance. Org creates it. Apply retrieves it on attach. On create, RDS manages the master secret; Apply and Debezium fetch that. Not in Config. Not in Terraform state.

@@ -9,3 +9,8 @@ variable "cluster_arn" {
 variable "prefix" {
   type = string
 }
+
+variable "secret_arn" {
+  type    = string
+  default = ""
+}
