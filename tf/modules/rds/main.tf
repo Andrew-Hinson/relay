@@ -15,16 +15,19 @@ resource "aws_db_parameter_group" "this" {
 }
 
 resource "aws_db_instance" "this" {
-  identifier             = var.name
-  engine                 = "postgres"
-  engine_version         = var.engine_version
-  instance_class         = var.instance_class
-  allocated_storage      = 20
-  username               = var.username
-  password               = var.password
-  db_subnet_group_name   = aws_db_subnet_group.this.name
-  parameter_group_name   = aws_db_parameter_group.this.name
-  vpc_security_group_ids = var.security_groups
-  skip_final_snapshot    = true
-  apply_immediately      = true
+  identifier                  = var.name
+  engine                      = "postgres"
+  engine_version              = var.engine_version
+  instance_class              = var.instance_class
+  allocated_storage           = 20
+  username                    = var.username
+  manage_master_user_password = true
+  db_subnet_group_name        = aws_db_subnet_group.this.name
+  parameter_group_name        = aws_db_parameter_group.this.name
+  vpc_security_group_ids      = var.security_groups
+  storage_encrypted           = true
+  deletion_protection         = true
+  skip_final_snapshot         = false
+  final_snapshot_identifier   = "${var.name}-final"
+  apply_immediately           = true
 }

@@ -9,8 +9,23 @@ import (
 
 type instanceCreds struct {
 	User     string `json:"user"`
+	Username string `json:"username"`
 	Password string `json:"password"`
 	Host     string `json:"host"`
+}
+
+func parseInstanceSecret(raw []byte) (instanceCreds, error) {
+	var creds instanceCreds
+	if err := json.Unmarshal(raw, &creds); err != nil {
+		return instanceCreds{}, err
+	}
+	if creds.User == "" {
+		creds.User = creds.Username
+	}
+	if creds.User == "" || creds.Password == "" {
+		return instanceCreds{}, fmt.Errorf("missing user or password")
+	}
+	return creds, nil
 }
 
 func retrieveInstanceSecret(name, region string) (instanceCreds, error) {
@@ -18,14 +33,30 @@ func retrieveInstanceSecret(name, region string) (instanceCreds, error) {
 	if err != nil {
 		return instanceCreds{}, fmt.Errorf("instance secret %s: %w", name, err)
 	}
-	var creds instanceCreds
-	if err := json.Unmarshal(out, &creds); err != nil {
-		return instanceCreds{}, err
-	}
-	if creds.User == "" || creds.Password == "" {
-		return instanceCreds{}, fmt.Errorf("instance secret %s missing user or password", name)
+	creds, err := parseInstanceSecret(out)
+	if err != nil {
+		return instanceCreds{}, fmt.Errorf("instance secret %s: %w", name, err)
 	}
 	return creds, nil
+}
+
+func secretIDFromARN(arn string) string {
+	_, name, ok := strings.Cut(arn, ":secret:")
+	if !ok {
+		return arn
+	}
+	return name
+}
+
+func bindMasterSecret(login *instanceLogin, plan *applyPlan, master instanceCreds, endpoint, arn string) {
+	login.Host = endpoint
+	login.User = master.User
+	login.Password = master.Password
+	plan.Connection.Endpoint = endpoint
+	plan.Connection.User = master.User
+	plan.Connection.Secret = secretIDFromARN(arn)
+	plan.Connection.SecretARN = arn
+	plan.Connection.SecretUserKey = "username"
 }
 
 func resolveEndpoint(creds instanceCreds, instance, region string, create bool) (string, error) {

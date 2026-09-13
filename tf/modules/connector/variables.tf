@@ -55,6 +55,11 @@ variable "secret_name" {
   type = string
 }
 
+variable "secret_user_key" {
+  type    = string
+  default = "user"
+}
+
 variable "partitions" {
   type = number
 }

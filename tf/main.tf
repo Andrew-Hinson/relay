@@ -4,7 +4,6 @@ module "rds" {
 
   name            = var.instance_name
   username        = var.rds_username
-  password        = var.master_password
   engine_version  = var.rds_engine_version
   instance_class  = var.rds_instance_class
   subnet_ids      = var.subnet_ids
@@ -38,6 +37,7 @@ module "acl" {
   role_arn    = var.connect_role_arn
   cluster_arn = var.msk_cluster_arn
   prefix      = var.connector_topic_prefix
+  secret_arn  = var.master_secret_arn
 }
 
 module "connector" {
@@ -55,7 +55,8 @@ module "connector" {
   table_include_list = var.table_include_list
   topic_prefix       = var.connector_topic_prefix
   publication_name   = var.publication_name
-  secret_name        = var.instance_name
+  secret_name        = var.secret_name
+  secret_user_key    = var.secret_user_key
   partitions         = var.partitions
   replicas           = var.replicas
 }

@@ -61,6 +61,14 @@ func TestWriteApplyFiles_twoConfigsDoNotClobberTfvars(t *testing.T) {
 	}
 }
 
+func TestTerraformEnv_omitsPassword(t *testing.T) {
+	for _, e := range terraformEnv("/tmp/acme") {
+		if strings.Contains(strings.ToLower(e), "password") || strings.HasPrefix(e, "TF_VAR_") {
+			t.Fatalf("secret in terraform env: %s", e)
+		}
+	}
+}
+
 func TestRenderTfvars_omitsPassword(t *testing.T) {
 	plan, err := planApply(validSpec(), liveSnapshot{})
 	if err != nil {
@@ -81,6 +89,35 @@ func TestRenderTfvars_omitsPassword(t *testing.T) {
 	}
 	if strings.Contains(out, "example-service_public") {
 		t.Fatalf("hyphenated Glue name in tfvars: %s", out)
+	}
+	if !strings.Contains(out, "secret_name = \"acme\"") {
+		t.Fatalf("missing secret_name: %s", out)
+	}
+	if !strings.Contains(out, "secret_user_key = \"user\"") {
+		t.Fatalf("missing secret_user_key: %s", out)
+	}
+}
+
+func TestRenderTfvars_createPassesMasterSecretARN(t *testing.T) {
+	plan, err := planApply(validSpec(), liveSnapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Connection.Secret = "rds!db-acme-AbCdEf"
+	plan.Connection.SecretARN = "arn:aws:secretsmanager:us-east-1:000000000000:secret:rds!db-acme-AbCdEf"
+	plan.Connection.SecretUserKey = "username"
+	out := renderTfvars(plan, clusterEnv{Region: "us-east-1"})
+	if strings.Contains(strings.ToLower(out), "password") {
+		t.Fatalf("password in tfvars: %s", out)
+	}
+	if !strings.Contains(out, "secret_name = \"rds!db-acme-AbCdEf\"") {
+		t.Fatalf("missing secret name: %s", out)
+	}
+	if !strings.Contains(out, "secret_user_key = \"username\"") {
+		t.Fatalf("missing user key: %s", out)
+	}
+	if !strings.Contains(out, "master_secret_arn = \"arn:aws:secretsmanager:us-east-1:000000000000:secret:rds!db-acme-AbCdEf\"") {
+		t.Fatalf("missing master secret arn: %s", out)
 	}
 }
 

@@ -54,9 +54,8 @@ func stateKey(cluster, name string) string {
 	return "relay/" + cluster + "/" + name + "/terraform.tfstate"
 }
 
-func terraformEnv(stateDir string, extra []string) []string {
-	env := []string{"TF_DATA_DIR=" + filepath.Join(stateDir, ".terraform")}
-	return append(env, extra...)
+func terraformEnv(stateDir string) []string {
+	return []string{"TF_DATA_DIR=" + filepath.Join(stateDir, ".terraform")}
 }
 
 func backendInitArgs(bucket, key, region string) []string {
@@ -131,7 +130,7 @@ func initApplyBackend(tfDir, stateDir string, env clusterEnv, cluster, name stri
 	if err != nil {
 		return fmt.Errorf("%w (s3://%s/%s)", err, env.StateBucket, key)
 	}
-	tfEnv := terraformEnv(stateDir, nil)
+	tfEnv := terraformEnv(stateDir)
 	if err := runTerraform(tfDir, tfEnv, backendInitArgs(env.StateBucket, key, env.Region)...); err != nil {
 		return err
 	}
@@ -152,6 +151,13 @@ func renderTfvars(plan applyPlan, env clusterEnv) string {
 	writeBool(&b, "instance_create", plan.Instance.Create)
 	writeStr(&b, "database_name", plan.Database.Name)
 	writeStr(&b, "rds_username", plan.Connection.User)
+	writeStr(&b, "secret_name", plan.Connection.Secret)
+	key := plan.Connection.SecretUserKey
+	if key == "" {
+		key = "user"
+	}
+	writeStr(&b, "secret_user_key", key)
+	writeStr(&b, "master_secret_arn", plan.Connection.SecretARN)
 	writeStr(&b, "msk_bootstrap_servers", env.MSKBootstrap)
 	writeStr(&b, "msk_cluster_arn", env.MSKClusterARN)
 	writeStr(&b, "warehouse_bucket", env.WarehouseBucket)
@@ -253,7 +259,7 @@ func runTerraform(dir string, extraEnv []string, args ...string) error {
 func terraformOutput(dir, stateDir, name string) (string, error) {
 	cmd := exec.Command("terraform", "output", "-raw", name)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), terraformEnv(stateDir, nil)...)
+	cmd.Env = append(os.Environ(), terraformEnv(stateDir)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

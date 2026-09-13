@@ -71,18 +71,28 @@ func run(args []string) error {
 	if err := initApplyBackend(tfDir, stateDir, env, spec.Cluster, spec.Name); err != nil {
 		return err
 	}
-	tfEnv := terraformEnv(stateDir, []string{"TF_VAR_master_password=" + creds.Password})
+	tfEnv := terraformEnv(stateDir)
 	if spec.Instance.Create {
 		if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-var-file="+tfvarsPath, "-target=module.rds"); err != nil {
 			return err
 		}
 		if out, err := terraformOutput(tfDir, stateDir, "rds_endpoint"); err == nil && out != "" {
 			endpoint = out
-			login.Host = endpoint
-			plan.Connection.Endpoint = endpoint
-			if _, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan)); err != nil {
-				return err
-			}
+		}
+		arn, err := terraformOutput(tfDir, stateDir, "rds_master_secret_arn")
+		if err != nil {
+			return fmt.Errorf("rds master secret: %w", err)
+		}
+		if arn == "" {
+			return errors.New("rds master secret: empty")
+		}
+		master, err := retrieveInstanceSecret(arn, env.Region)
+		if err != nil {
+			return err
+		}
+		bindMasterSecret(&login, &plan, master, endpoint, arn)
+		if _, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan)); err != nil {
+			return err
 		}
 		live, err = inspectLive(login, databaseName(spec))
 		if err != nil {
@@ -92,8 +102,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		plan.Connection.User = creds.User
-		plan.Connection.Endpoint = endpoint
+		bindMasterSecret(&login, &plan, master, endpoint, arn)
 		tfvarsPath, _, err = writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 		if err != nil {
 			return err

@@ -48,10 +48,12 @@ type plannedDatabase struct {
 }
 
 type plannedConnection struct {
-	Endpoint string
-	Database string
-	User     string
-	Secret   string
+	Endpoint      string
+	Database      string
+	User          string
+	Secret        string
+	SecretARN     string
+	SecretUserKey string
 }
 
 type plannedKafka struct {
@@ -131,10 +133,11 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 		plan.Database.DDL = "CREATE DATABASE " + dbName
 	}
 	plan.Connection = plannedConnection{
-		Endpoint: instName,
-		Database: dbName,
-		User:     instName,
-		Secret:   instName,
+		Endpoint:      instName,
+		Database:      dbName,
+		User:          instName,
+		Secret:        instName,
+		SecretUserKey: "user",
 	}
 	plan.Kafka = plannedKafka{Partitions: partitions, Replicas: replicas, MinInsyncReplicas: minISR}
 

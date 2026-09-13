@@ -98,10 +98,19 @@ variable "rds_username" {
   default = "relay"
 }
 
-variable "master_password" {
-  type      = string
-  sensitive = true
-  default   = ""
+variable "secret_name" {
+  type    = string
+  default = "example-service"
+}
+
+variable "secret_user_key" {
+  type    = string
+  default = "user"
+}
+
+variable "master_secret_arn" {
+  type    = string
+  default = ""
 }
 
 variable "partitions" {
