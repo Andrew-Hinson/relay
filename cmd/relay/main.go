@@ -37,13 +37,13 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	creds, err := retrieveInstanceSecret(instanceName(spec))
+	creds, err := retrieveInstanceSecret(instanceName(spec), env.Region)
 	if err != nil {
 		return err
 	}
 	root := filepath.Dir(tfDir)
 	stateDir := configStateDir(root, spec.Name)
-	endpoint, err := resolveEndpoint(creds, instanceName(spec), spec.Instance.Create)
+	endpoint, err := resolveEndpoint(creds, instanceName(spec), env.Region, spec.Instance.Create)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func run(args []string) error {
 	if spec.Instance.Create {
 		live = liveSnapshot{}
 	} else {
-		live, err = inspectLive(login)
+		live, err = inspectLive(login, databaseName(spec))
 		if err != nil {
 			return err
 		}
@@ -84,7 +84,7 @@ func run(args []string) error {
 				return err
 			}
 		}
-		live, err = inspectLive(login)
+		live, err = inspectLive(login, databaseName(spec))
 		if err != nil {
 			return err
 		}
