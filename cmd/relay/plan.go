@@ -26,7 +26,6 @@ type liveColumn struct {
 
 type applyPlan struct {
 	Name       string
-	Cluster    string
 	Prefix     string
 	Instance   plannedInstance
 	Database   plannedDatabase
@@ -125,7 +124,6 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 	}
 
 	plan.Name = spec.Name
-	plan.Cluster = spec.Cluster
 	plan.Prefix = prefix
 	plan.Instance = plannedInstance{Name: instName, Create: spec.Instance.Create}
 	plan.Database = plannedDatabase{Name: dbName}

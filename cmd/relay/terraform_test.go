@@ -143,11 +143,17 @@ func TestRenderTfvars_scopesConnectIAMByPrefix(t *testing.T) {
 	if !strings.Contains(out, "msk_cluster_arn = \"arn:aws:kafka:us-east-1:000000000000:cluster/prod/00000000-0000-0000-0000-000000000000-0\"") {
 		t.Fatalf("missing cluster arn: %s", out)
 	}
+	if strings.Contains(out, "\ncluster =") || strings.HasPrefix(out, "cluster =") {
+		t.Fatalf("cluster tfvar is unused by resources: %s", out)
+	}
+	if strings.Contains(out, "vpc_id") {
+		t.Fatalf("vpc_id tfvar is unused by resources: %s", out)
+	}
 }
 
 func TestRenderTfvars_exampleYAMLUsesGlueSafeIcebergName(t *testing.T) {
 	spec := validSpec()
-	spec.Name = "example-service"
+	spec.Name = "example"
 	spec.Tables[0].Columns = []column{
 		{Name: "id", Type: "serial", PrimaryKey: true},
 		{Name: "amount", Type: "numeric", Nullable: boolPtr(false)},
@@ -157,13 +163,13 @@ func TestRenderTfvars_exampleYAMLUsesGlueSafeIcebergName(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := renderTfvars(plan, clusterEnv{Region: "us-east-1"})
-	if !strings.Contains(out, "iceberg_table = \"example_service_public_orders\"") {
+	if !strings.Contains(out, "iceberg_table = \"example_public_orders\"") {
 		t.Fatalf("missing glue-safe iceberg name: %s", out)
 	}
 	if strings.Contains(out, "example-service_public_orders") {
 		t.Fatalf("hyphenated Glue name: %s", out)
 	}
-	if !strings.Contains(out, "sink_control_topic = \"example-service.control.iceberg\"") {
+	if !strings.Contains(out, "sink_control_topic = \"example.control.iceberg\"") {
 		t.Fatalf("missing control topic: %s", out)
 	}
 	if !strings.Contains(out, "{ name = \"amount\", type = \"decimal(38,9)\" }") {
@@ -305,12 +311,19 @@ func TestClusterEnv_validateRequiresStateBucket(t *testing.T) {
 	}
 }
 
+func TestClusterEnv_validateRequiresMSKClusterARN(t *testing.T) {
+	env := validClusterEnv()
+	env.MSKClusterARN = ""
+	if err := env.validate(false); err == nil || !strings.Contains(err.Error(), "msk-cluster-arn") {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestClusterEnv_validateCreateRequiresNetwork(t *testing.T) {
 	env := validClusterEnv()
 	if err := env.validate(true); err == nil {
 		t.Fatal("expected error when RDS network is missing")
 	}
-	env.VPCID = "vpc-1"
 	env.SubnetIDs = []string{"subnet-1"}
 	env.RDSSGIds = []string{"sg-2"}
 	if err := env.validate(true); err != nil {

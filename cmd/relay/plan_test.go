@@ -68,15 +68,15 @@ func TestPlanApply_schemaOverride(t *testing.T) {
 
 func TestPlanApply_icebergNameIsGlueSafe(t *testing.T) {
 	spec := validSpec()
-	spec.Name = "example-service"
+	spec.Name = "example"
 	plan, err := planApply(spec, liveSnapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Tables[0].Iceberg != "example_service_public_orders" {
+	if plan.Tables[0].Iceberg != "example_public_orders" {
 		t.Fatalf("got iceberg %q", plan.Tables[0].Iceberg)
 	}
-	if plan.Sink.ControlTopic != "example-service.control.iceberg" {
+	if plan.Sink.ControlTopic != "example.control.iceberg" {
 		t.Fatalf("got control topic %q", plan.Sink.ControlTopic)
 	}
 	if plan.Tables[0].IDColumns != "id" {
@@ -107,18 +107,6 @@ func TestPlanApply_databaseDefaultsToConfig(t *testing.T) {
 	}
 }
 
-func TestPlanApply_databaseNameStripsHyphensAndAddsDB(t *testing.T) {
-	spec := validSpec()
-	spec.Name = "example-service"
-	plan, err := planApply(spec, liveSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.Database.Name != "exampleservicedb" || plan.Database.DDL != "CREATE DATABASE exampleservicedb" {
-		t.Fatalf("got Database %+v", plan.Database)
-	}
-}
-
 func TestPlanApply_databaseNameOverride(t *testing.T) {
 	spec := validSpec()
 	spec.Database.Name = "shop"
@@ -127,18 +115,6 @@ func TestPlanApply_databaseNameOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	if plan.Database.Name != "shop" || plan.Database.DDL != "CREATE DATABASE shop" {
-		t.Fatalf("got Database %+v", plan.Database)
-	}
-}
-
-func TestPlanApply_databaseNameOverrideIsSanitized(t *testing.T) {
-	spec := validSpec()
-	spec.Database.Name = "shop-db"
-	plan, err := planApply(spec, liveSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.Database.Name != "shopdb" || plan.Database.DDL != "CREATE DATABASE shopdb" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
 }
@@ -298,29 +274,29 @@ func TestPlanApply_exampleYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec.Name != "example-service" {
+	if spec.Name != "example" {
 		t.Fatalf("got name %q", spec.Name)
 	}
 	plan, err := planApply(spec, liveSnapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Tables[0].Topic != "example-service.public.orders" {
+	if plan.Tables[0].Topic != "example.public.orders" {
 		t.Fatalf("got topic %q", plan.Tables[0].Topic)
 	}
-	if plan.Tables[0].Iceberg != "example_service_public_orders" {
+	if plan.Tables[0].Iceberg != "example_public_orders" {
 		t.Fatalf("got iceberg %q", plan.Tables[0].Iceberg)
 	}
-	if plan.Sink.ControlTopic != "example-service.control.iceberg" {
+	if plan.Sink.ControlTopic != "example.control.iceberg" {
 		t.Fatalf("got control topic %q", plan.Sink.ControlTopic)
 	}
 	if plan.Connector.TableIncludeList != "public.orders" {
 		t.Fatalf("got include %q", plan.Connector.TableIncludeList)
 	}
-	if plan.Database.Name != "exampleservicedb" || plan.Database.DDL != "CREATE DATABASE exampleservicedb" {
+	if plan.Database.Name != "exampledb" || plan.Database.DDL != "CREATE DATABASE exampledb" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
-	if plan.Instance.Name != "example-service" || !plan.Instance.Create {
+	if plan.Instance.Name != "example" || !plan.Instance.Create {
 		t.Fatalf("got Instance %+v", plan.Instance)
 	}
 }

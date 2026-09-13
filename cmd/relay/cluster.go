@@ -18,7 +18,6 @@ type clusterEnv struct {
 	ConnectRoleARN    string
 	ConnectSubnetIDs  []string
 	ConnectSGIds      []string
-	VPCID             string
 	SubnetIDs         []string
 	RDSSGIds          []string
 	RDSInstanceClass  string
@@ -41,7 +40,6 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 	role := fs.String("connect-role-arn", envOr("RELAY_CONNECT_ROLE_ARN", ""), "MSK Connect service role ARN")
 	connectSubnets := fs.String("connect-subnet-ids", envOr("RELAY_CONNECT_SUBNET_IDS", ""), "MSK Connect subnet IDs (comma-separated)")
 	connectSGs := fs.String("connect-sg-ids", envOr("RELAY_CONNECT_SG_IDS", ""), "MSK Connect security group IDs (comma-separated)")
-	vpc := fs.String("vpc-id", envOr("RELAY_VPC_ID", ""), "VPC for RDS create")
 	subnets := fs.String("subnet-ids", envOr("RELAY_SUBNET_IDS", ""), "RDS subnet IDs (comma-separated)")
 	rdsSGs := fs.String("rds-sg-ids", envOr("RELAY_RDS_SG_IDS", ""), "RDS security group IDs (comma-separated)")
 	class := fs.String("rds-instance-class", envOr("RELAY_RDS_INSTANCE_CLASS", "db.t3.medium"), "RDS instance class")
@@ -65,7 +63,6 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 		ConnectRoleARN:    *role,
 		ConnectSubnetIDs:  csv(*connectSubnets),
 		ConnectSGIds:      csv(*connectSGs),
-		VPCID:             *vpc,
 		SubnetIDs:         csv(*subnets),
 		RDSSGIds:          csv(*rdsSGs),
 		RDSInstanceClass:  *class,
@@ -103,9 +100,6 @@ func (e clusterEnv) validate(createInstance bool) error {
 	}
 	if !createInstance {
 		return nil
-	}
-	if e.VPCID == "" {
-		return errors.New("--vpc-id / RELAY_VPC_ID is required when instance.create")
 	}
 	if len(e.SubnetIDs) == 0 {
 		return errors.New("--subnet-ids / RELAY_SUBNET_IDS is required when instance.create")

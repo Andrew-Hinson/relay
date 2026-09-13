@@ -5,7 +5,7 @@ A Config is the YAML a service team commits. Apply attaches that Config to an ex
 ## Language
 
 **Config**:
-The YAML a service team commits. Input to Apply.
+The YAML a service team commits. Input to Apply. Identifiers are `[a-z][a-z0-9_]*`. An Instance name used on create is `[a-z][a-z0-9]*`.
 _Avoid_: Project, manifest, Relay file
 
 **Apply**:
@@ -20,14 +20,14 @@ The shared S3 bucket and Glue Iceberg catalog for a Cluster.
 _Avoid_: per-Config bucket, landing zone
 
 **Iceberg table**:
-The derived lake relation for a Table. Name is Glue-safe `[a-z0-9_]` (`example-service` + `public.orders` → `example_service_public_orders`). BI reads it. Not a Relay object.
+The derived lake relation for a Table. Name is Glue-safe `[a-z0-9_]` (`example` + `public.orders` → `example_public_orders`). BI reads it. Not a Relay object.
 
 **Instance**:
-The RDS server a Config's Database lives on. A Config creates it or names an existing one.
+The RDS server a Config's Database lives on. A Config creates it or names an existing one. Create names are `[a-z][a-z0-9]*`. Attach may use hyphens.
 _Avoid_: cluster, RDS as the generic term
 
 **Database**:
-A named Postgres database on an Instance. This Config always creates it. One per Config. Share happens at Instance only. Names are lowercased with hyphens removed. Default is the Config name plus a `db` suffix (`example-service` → `exampleservicedb`). An override is sanitized the same way (`shop-db` → `shopdb`).
+A named Postgres database on an Instance. This Config always creates it. One per Config. Share happens at Instance only. Names are `[a-z][a-z0-9_]*`. Default is the Config name plus a `db` suffix (`example` → `exampledb`).
 _Avoid_: schema, database.create false
 
 **Schema**:

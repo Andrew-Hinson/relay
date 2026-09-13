@@ -13,11 +13,11 @@ See [CONTEXT.md](CONTEXT.md) for terms.
 ```yaml
 apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true          # or create: false and name: existing-instance
-database: {}            # name defaults to Config name, hyphens stripped, + db; override is sanitized the same way
+database: {}            # name defaults to Config name + db
 tables:
   - name: orders
     columns:
@@ -58,7 +58,7 @@ go run -C cmd/relay . apply -f example/example.yaml \
   --connect-sg-ids "$CONNECT_SGS"
 ```
 
-When `instance.create` is true, also pass `--vpc-id`, `--subnet-ids`, `--rds-sg-ids`. Optional: `--rds-instance-class` (default `db.t3.medium`), `--rds-engine-version` (default `16`). One-shot `--migrate-state` copies a leftover `.relay/<name>/terraform.tfstate` into the Cluster bucket when that key is empty.
+When `instance.create` is true, also pass `--subnet-ids`, `--rds-sg-ids`. Optional: `--rds-instance-class` (default `db.t3.medium`), `--rds-engine-version` (default `16`). One-shot `--migrate-state` copies a leftover `.relay/<name>/terraform.tfstate` into the Cluster bucket when that key is empty.
 
 Prints `endpoint`, `database`, `user`, `secret`. Never the password.
 

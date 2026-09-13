@@ -8,7 +8,7 @@ import (
 func validYAML() string {
 	return `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -26,7 +26,7 @@ func TestParseConfig_nameAndCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec.Name != "example-service" {
+	if spec.Name != "example" {
 		t.Fatalf("got name %q", spec.Name)
 	}
 	if spec.Cluster != "prod" {
@@ -34,8 +34,62 @@ func TestParseConfig_nameAndCluster(t *testing.T) {
 	}
 }
 
+func TestParseConfig_rejectsHyphenatedName(t *testing.T) {
+	raw := strings.Replace(validYAML(), "name: example\n", "name: example-service\n", 1)
+	if _, err := parseConfig([]byte(raw)); err == nil {
+		t.Fatal("expected error when name has a hyphen")
+	}
+}
+
+func TestParseConfig_rejectsHyphenatedTable(t *testing.T) {
+	raw := strings.Replace(validYAML(), "name: orders\n", "name: order-items\n", 1)
+	if _, err := parseConfig([]byte(raw)); err == nil {
+		t.Fatal("expected error when table name has a hyphen")
+	}
+}
+
+func TestParseConfig_rejectsHyphenatedDatabase(t *testing.T) {
+	if _, err := parseConfig([]byte(validYAML() + "database:\n  name: shop-db\n")); err == nil {
+		t.Fatal("expected error when database name has a hyphen")
+	}
+}
+
+func TestParseConfig_acceptsUnderscoreColumn(t *testing.T) {
+	raw := strings.Replace(validYAML(), "name: id\n", "name: user_id\n", 1)
+	if _, err := parseConfig([]byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseConfig_rejectsCreateInstanceHyphen(t *testing.T) {
+	raw := strings.Replace(validYAML(), "  create: true\n", "  create: true\n  name: shared-rds\n", 1)
+	if _, err := parseConfig([]byte(raw)); err == nil {
+		t.Fatal("expected error when create Instance name has a hyphen")
+	}
+}
+
+func TestParseConfig_allowsAttachInstanceHyphen(t *testing.T) {
+	raw := `apiVersion: relay/v1
+kind: Config
+name: widgets
+cluster: prod
+instance:
+  create: false
+  name: shared-rds
+tables:
+  - name: orders
+    columns:
+      - name: id
+        type: serial
+        primary_key: true
+`
+	if _, err := parseConfig([]byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestParseConfig_rejectsProjectKey(t *testing.T) {
-	raw := strings.Replace(validYAML(), "name: example-service\n", "project: example-service\n", 1)
+	raw := strings.Replace(validYAML(), "name: example\n", "project: example\n", 1)
 	if _, err := parseConfig([]byte(raw)); err == nil {
 		t.Fatal("expected error when identity is project")
 	}
@@ -54,7 +108,7 @@ func TestParseConfig_rejectsTopicsAsSource(t *testing.T) {
 }
 
 func TestParseConfig_requiresName(t *testing.T) {
-	raw := strings.Replace(validYAML(), "name: example-service\n", "name: \"\"\n", 1)
+	raw := strings.Replace(validYAML(), "name: example\n", "name: \"\"\n", 1)
 	if _, err := parseConfig([]byte(raw)); err == nil {
 		t.Fatal("expected error when name is empty")
 	}
@@ -84,7 +138,7 @@ func TestParseConfig_requiresAPIVersion(t *testing.T) {
 func TestParseConfig_requiresTables(t *testing.T) {
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -97,7 +151,7 @@ instance:
 func TestParseConfig_pkCannotBeNullable(t *testing.T) {
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -117,7 +171,7 @@ tables:
 func TestParseConfig_requiresPrimaryKey(t *testing.T) {
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -135,7 +189,7 @@ tables:
 func TestParseConfig_requiresColumnName(t *testing.T) {
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -173,7 +227,7 @@ func TestParseConfig_instanceNameMax40(t *testing.T) {
 	name := strings.Repeat("a", 41)
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -214,7 +268,7 @@ func TestParseConfig_instanceName40Allowed(t *testing.T) {
 	name := strings.Repeat("a", 40)
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -234,7 +288,7 @@ tables:
 func TestParseConfig_requiresTableName(t *testing.T) {
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -252,7 +306,7 @@ tables:
 func TestParseConfig_rejectsUnlistedColumnType(t *testing.T) {
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true
@@ -271,7 +325,7 @@ tables:
 func TestParseConfig_rejectsTopicNameOverride(t *testing.T) {
 	raw := `apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod
 instance:
   create: true

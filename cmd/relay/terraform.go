@@ -146,7 +146,6 @@ func initApplyBackend(tfDir, stateDir string, env clusterEnv, cluster, name stri
 func renderTfvars(plan applyPlan, env clusterEnv) string {
 	var b strings.Builder
 	writeStr(&b, "region", env.Region)
-	writeStr(&b, "cluster", plan.Cluster)
 	writeStr(&b, "instance_name", plan.Instance.Name)
 	writeBool(&b, "instance_create", plan.Instance.Create)
 	writeStr(&b, "database_name", plan.Database.Name)
@@ -167,7 +166,6 @@ func renderTfvars(plan applyPlan, env clusterEnv) string {
 	writeStr(&b, "connect_role_arn", env.ConnectRoleARN)
 	writeList(&b, "connect_subnet_ids", env.ConnectSubnetIDs)
 	writeList(&b, "connect_sg_ids", env.ConnectSGIds)
-	writeStr(&b, "vpc_id", env.VPCID)
 	writeList(&b, "subnet_ids", env.SubnetIDs)
 	writeList(&b, "rds_sg_ids", env.RDSSGIds)
 	writeStr(&b, "rds_instance_class", env.RDSInstanceClass)
