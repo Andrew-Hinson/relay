@@ -31,20 +31,117 @@ func configStateDir(root, name string) string {
 	return filepath.Join(root, ".relay", name)
 }
 
-func writeApplyFiles(stateDir, tfvars, sql string) (tfvarsPath, statePath, sqlPath string, err error) {
+func writeApplyFiles(stateDir, tfvars, sql string) (tfvarsPath, sqlPath string, err error) {
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 	tfvarsPath = filepath.Join(stateDir, "terraform.tfvars")
-	statePath = filepath.Join(stateDir, "terraform.tfstate")
 	sqlPath = filepath.Join(stateDir, "apply.sql")
 	if err := os.WriteFile(tfvarsPath, []byte(tfvars), 0644); err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 	if err := os.WriteFile(sqlPath, []byte(sql), 0644); err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
-	return tfvarsPath, statePath, sqlPath, nil
+	return tfvarsPath, sqlPath, nil
+}
+
+func localStatePath(stateDir string) string {
+	return filepath.Join(stateDir, "terraform.tfstate")
+}
+
+func stateKey(cluster, name string) string {
+	return "relay/" + cluster + "/" + name + "/terraform.tfstate"
+}
+
+func terraformEnv(stateDir string, extra []string) []string {
+	env := []string{"TF_DATA_DIR=" + filepath.Join(stateDir, ".terraform")}
+	return append(env, extra...)
+}
+
+func backendInitArgs(bucket, key, region string) []string {
+	return []string{
+		"init",
+		"-input=false",
+		"-reconfigure",
+		"-backend-config=bucket=" + bucket,
+		"-backend-config=key=" + key,
+		"-backend-config=region=" + region,
+		"-backend-config=encrypt=true",
+		"-backend-config=use_lockfile=true",
+	}
+}
+
+func headObjectArgs(bucket, key, region string) []string {
+	return awsRegionArgs(region, "s3api", "head-object", "--bucket", bucket, "--key", key)
+}
+
+func remoteStateExists(bucket, key, region string) (bool, error) {
+	out, err := exec.Command("aws", headObjectArgs(bucket, key, region)...).CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	s := string(out)
+	if strings.Contains(s, "404") || strings.Contains(s, "NotFound") || strings.Contains(s, "Not Found") {
+		return false, nil
+	}
+	return false, fmt.Errorf("state s3://%s/%s: %w", bucket, key, err)
+}
+
+type stateAction int
+
+const (
+	actionInit stateAction = iota
+	actionMigrate
+)
+
+func decideState(hasLocal, hasRemote, migrate bool) (stateAction, error) {
+	switch {
+	case migrate && !hasLocal:
+		return 0, fmt.Errorf("--migrate-state set but local terraform.tfstate is missing")
+	case migrate && hasRemote:
+		return 0, fmt.Errorf("remote state already exists; --migrate-state refused")
+	case migrate:
+		return actionMigrate, nil
+	case hasLocal && !hasRemote:
+		return 0, fmt.Errorf("local state exists; pass --migrate-state once to copy it to the Cluster state bucket")
+	default:
+		return actionInit, nil
+	}
+}
+
+func fileExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
+}
+
+func initApplyBackend(tfDir, stateDir string, env clusterEnv, cluster, name string) error {
+	key := stateKey(cluster, name)
+	local := localStatePath(stateDir)
+	hasLocal := fileExists(local)
+	var hasRemote bool
+	if hasLocal || env.MigrateState {
+		var err error
+		hasRemote, err = remoteStateExists(env.StateBucket, key, env.Region)
+		if err != nil {
+			return err
+		}
+	}
+	action, err := decideState(hasLocal, hasRemote, env.MigrateState)
+	if err != nil {
+		return fmt.Errorf("%w (s3://%s/%s)", err, env.StateBucket, key)
+	}
+	tfEnv := terraformEnv(stateDir, nil)
+	if err := runTerraform(tfDir, tfEnv, backendInitArgs(env.StateBucket, key, env.Region)...); err != nil {
+		return err
+	}
+	if action != actionMigrate {
+		return nil
+	}
+	if err := runTerraform(tfDir, tfEnv, "state", "push", "-force", local); err != nil {
+		return err
+	}
+	return os.Rename(local, local+".migrated")
 }
 
 func renderTfvars(plan applyPlan, env clusterEnv) string {
@@ -153,9 +250,10 @@ func runTerraform(dir string, extraEnv []string, args ...string) error {
 	return cmd.Run()
 }
 
-func terraformOutput(dir, statePath, name string) (string, error) {
-	cmd := exec.Command("terraform", "output", "-raw", "-state="+statePath, name)
+func terraformOutput(dir, stateDir, name string) (string, error) {
+	cmd := exec.Command("terraform", "output", "-raw", name)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), terraformEnv(stateDir, nil)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

@@ -64,23 +64,23 @@ func run(args []string) error {
 	}
 	plan.Connection.User = creds.User
 	plan.Connection.Endpoint = endpoint
-	tfvarsPath, statePath, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
+	tfvarsPath, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 	if err != nil {
 		return err
 	}
-	tfEnv := []string{"TF_VAR_master_password=" + creds.Password}
-	if err := runTerraform(tfDir, nil, "init"); err != nil {
+	if err := initApplyBackend(tfDir, stateDir, env, spec.Cluster, spec.Name); err != nil {
 		return err
 	}
+	tfEnv := terraformEnv(stateDir, []string{"TF_VAR_master_password=" + creds.Password})
 	if spec.Instance.Create {
-		if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-state="+statePath, "-var-file="+tfvarsPath, "-target=module.rds"); err != nil {
+		if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-var-file="+tfvarsPath, "-target=module.rds"); err != nil {
 			return err
 		}
-		if out, err := terraformOutput(tfDir, statePath, "rds_endpoint"); err == nil && out != "" {
+		if out, err := terraformOutput(tfDir, stateDir, "rds_endpoint"); err == nil && out != "" {
 			endpoint = out
 			login.Host = endpoint
 			plan.Connection.Endpoint = endpoint
-			if _, _, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan)); err != nil {
+			if _, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan)); err != nil {
 				return err
 			}
 		}
@@ -94,7 +94,7 @@ func run(args []string) error {
 		}
 		plan.Connection.User = creds.User
 		plan.Connection.Endpoint = endpoint
-		tfvarsPath, statePath, _, err = writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
+		tfvarsPath, _, err = writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ func run(args []string) error {
 	if err := applySQL(login, plan); err != nil {
 		return err
 	}
-	if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-state="+statePath, "-var-file="+tfvarsPath); err != nil {
+	if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-var-file="+tfvarsPath); err != nil {
 		return err
 	}
 	fmt.Print(formatConnection(plan.Connection))

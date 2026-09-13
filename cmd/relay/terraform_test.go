@@ -37,11 +37,11 @@ func TestConfigStateDir_twoConfigsDoNotShareState(t *testing.T) {
 
 func TestWriteApplyFiles_twoConfigsDoNotClobberTfvars(t *testing.T) {
 	root := t.TempDir()
-	acmeVars, acmeState, _, err := writeApplyFiles(configStateDir(root, "acme"), "topic_name = \"acme.public.orders\"\n", "")
+	acmeVars, _, err := writeApplyFiles(configStateDir(root, "acme"), "topic_name = \"acme.public.orders\"\n", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bravoVars, bravoState, _, err := writeApplyFiles(configStateDir(root, "bravo"), "topic_name = \"bravo.public.orders\"\n", "")
+	bravoVars, _, err := writeApplyFiles(configStateDir(root, "bravo"), "topic_name = \"bravo.public.orders\"\n", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,9 +58,6 @@ func TestWriteApplyFiles_twoConfigsDoNotClobberTfvars(t *testing.T) {
 	}
 	if string(bravoRaw) != "topic_name = \"bravo.public.orders\"\n" {
 		t.Fatalf("bravo tfvars clobbered: %s", bravoRaw)
-	}
-	if acmeState == bravoState {
-		t.Fatal("state paths must differ")
 	}
 }
 
@@ -143,19 +140,136 @@ func TestParseApplyFlags_requiresFile(t *testing.T) {
 	}
 }
 
-func TestClusterEnv_validateCreateRequiresNetwork(t *testing.T) {
-	env := clusterEnv{
-		Region:            "us-east-1",
-		MSKBootstrap:      "b:9098",
-		MSKClusterARN:     "arn:msk",
-		WarehouseBucket:   "wh",
-		GlueDatabase:      "glue",
-		DebeziumPluginARN: "arn:d",
-		IcebergPluginARN:  "arn:i",
-		ConnectRoleARN:    "arn:r",
-		ConnectSubnetIDs:  []string{"subnet-1"},
-		ConnectSGIds:      []string{"sg-1"},
+func TestParseApplyFlags_stateBucketFromEnv(t *testing.T) {
+	t.Setenv("RELAY_STATE_BUCKET", "relay-prod-state")
+	_, env, err := parseApplyFlags([]string{"-f", "x.yaml"})
+	if err != nil {
+		t.Fatal(err)
 	}
+	if env.StateBucket != "relay-prod-state" {
+		t.Fatalf("got %q", env.StateBucket)
+	}
+	if env.MigrateState {
+		t.Fatal("migrate-state must default false")
+	}
+}
+
+func TestParseApplyFlags_migrateState(t *testing.T) {
+	_, env, err := parseApplyFlags([]string{"-f", "x.yaml", "--migrate-state"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.MigrateState {
+		t.Fatal("expected --migrate-state")
+	}
+}
+
+func TestStateKey_includesClusterAndName(t *testing.T) {
+	got := stateKey("prod", "acme")
+	if got != "relay/prod/acme/terraform.tfstate" {
+		t.Fatalf("got %q", got)
+	}
+	if stateKey("prod", "acme") == stateKey("prod", "bravo") {
+		t.Fatal("configs must not share state key")
+	}
+	if stateKey("prod", "acme") == stateKey("staging", "acme") {
+		t.Fatal("clusters must not share state key")
+	}
+}
+
+func TestBackendInitArgs_remoteS3(t *testing.T) {
+	got := strings.Join(backendInitArgs("relay-prod-state", "relay/prod/acme/terraform.tfstate", "us-east-1"), " ")
+	if !strings.Contains(got, "-backend-config=bucket=relay-prod-state") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "-backend-config=key=relay/prod/acme/terraform.tfstate") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "-backend-config=region=us-east-1") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "-backend-config=encrypt=true") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "-backend-config=use_lockfile=true") {
+		t.Fatalf("got %q", got)
+	}
+	if strings.Contains(got, "-state=") {
+		t.Fatalf("local -state= still present: %s", got)
+	}
+}
+
+func TestHeadObjectArgs_passesBucketKeyRegion(t *testing.T) {
+	got := strings.Join(headObjectArgs("relay-prod-state", "relay/prod/acme/terraform.tfstate", "eu-west-1"), " ")
+	if !strings.Contains(got, "s3api head-object --bucket relay-prod-state --key relay/prod/acme/terraform.tfstate") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "--region eu-west-1") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestDecideState_emptyIsNew(t *testing.T) {
+	action, err := decideState(false, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action != actionInit {
+		t.Fatalf("got %v", action)
+	}
+}
+
+func TestDecideState_localWithoutFlagRefused(t *testing.T) {
+	_, err := decideState(true, false, false)
+	if err == nil || !strings.Contains(err.Error(), "--migrate-state") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDecideState_localWithRemoteIgnoresLocal(t *testing.T) {
+	action, err := decideState(true, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action != actionInit {
+		t.Fatalf("got %v", action)
+	}
+}
+
+func TestDecideState_migrateUploadsWhenRemoteEmpty(t *testing.T) {
+	action, err := decideState(true, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action != actionMigrate {
+		t.Fatalf("got %v", action)
+	}
+}
+
+func TestDecideState_migrateRefusedWhenRemoteExists(t *testing.T) {
+	_, err := decideState(true, true, true)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDecideState_migrateRefusedWhenLocalMissing(t *testing.T) {
+	_, err := decideState(false, false, true)
+	if err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestClusterEnv_validateRequiresStateBucket(t *testing.T) {
+	env := validClusterEnv()
+	env.StateBucket = ""
+	if err := env.validate(false); err == nil || !strings.Contains(err.Error(), "state-bucket") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestClusterEnv_validateCreateRequiresNetwork(t *testing.T) {
+	env := validClusterEnv()
 	if err := env.validate(true); err == nil {
 		t.Fatal("expected error when RDS network is missing")
 	}
@@ -164,5 +278,21 @@ func TestClusterEnv_validateCreateRequiresNetwork(t *testing.T) {
 	env.RDSSGIds = []string{"sg-2"}
 	if err := env.validate(true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func validClusterEnv() clusterEnv {
+	return clusterEnv{
+		Region:            "us-east-1",
+		MSKBootstrap:      "b:9098",
+		MSKClusterARN:     "arn:msk",
+		WarehouseBucket:   "wh",
+		StateBucket:       "relay-prod-state",
+		GlueDatabase:      "glue",
+		DebeziumPluginARN: "arn:d",
+		IcebergPluginARN:  "arn:i",
+		ConnectRoleARN:    "arn:r",
+		ConnectSubnetIDs:  []string{"subnet-1"},
+		ConnectSGIds:      []string{"sg-1"},
 	}
 }
