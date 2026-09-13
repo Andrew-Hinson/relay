@@ -15,7 +15,7 @@ type instanceLogin struct {
 	Password string
 }
 
-func inspectLive(login instanceLogin) (liveSnapshot, error) {
+func inspectLive(login instanceLogin, database string) (liveSnapshot, error) {
 	ctx := context.Background()
 	conn, err := pgx.Connect(ctx, postgresURL(login, "postgres"))
 	if err != nil {
@@ -40,16 +40,14 @@ func inspectLive(login instanceLogin) (liveSnapshot, error) {
 		return liveSnapshot{}, err
 	}
 	live.Databases = dbs
-	for _, db := range dbs {
-		if db == "postgres" || db == "rdsadmin" {
-			continue
-		}
-		tables, err := inspectDatabase(ctx, login, db)
-		if err != nil {
-			return liveSnapshot{}, err
-		}
-		live.Tables = append(live.Tables, tables...)
+	if !liveHasDatabase(live, database) {
+		return live, nil
 	}
+	tables, err := inspectDatabase(ctx, login, database)
+	if err != nil {
+		return liveSnapshot{}, err
+	}
+	live.Tables = tables
 	return live, nil
 }
 
