@@ -20,4 +20,6 @@ provider "aws" {
 provider "kafka" {
   bootstrap_servers = split(",", var.msk_bootstrap_servers)
   tls_enabled       = true
+  sasl_mechanism    = "aws-iam"
+  sasl_aws_region   = var.region
 }

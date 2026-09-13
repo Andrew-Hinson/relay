@@ -78,6 +78,30 @@ func TestRenderTfvars_omitsPassword(t *testing.T) {
 	}
 }
 
+func TestRenderTfvars_scopesConnectIAMByPrefix(t *testing.T) {
+	plan, err := planApply(validSpec(), liveSnapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := renderTfvars(plan, clusterEnv{
+		Region:         "us-east-1",
+		MSKClusterARN:  "arn:aws:kafka:us-east-1:000000000000:cluster/prod/00000000-0000-0000-0000-000000000000-0",
+		ConnectRoleARN: "arn:aws:iam::000000000000:role/relay-connect",
+	})
+	if strings.Contains(out, "principal") {
+		t.Fatalf("kafka User principal still in tfvars: %s", out)
+	}
+	if !strings.Contains(out, "connector_topic_prefix = \"acme\"") {
+		t.Fatalf("missing topic prefix: %s", out)
+	}
+	if !strings.Contains(out, "connect_role_arn = \"arn:aws:iam::000000000000:role/relay-connect\"") {
+		t.Fatalf("missing connect role: %s", out)
+	}
+	if !strings.Contains(out, "msk_cluster_arn = \"arn:aws:kafka:us-east-1:000000000000:cluster/prod/00000000-0000-0000-0000-000000000000-0\"") {
+		t.Fatalf("missing cluster arn: %s", out)
+	}
+}
+
 func TestParseApplyFlags_requiresFile(t *testing.T) {
 	if _, _, err := parseApplyFlags(nil); err == nil {
 		t.Fatal("expected error when -f is missing")

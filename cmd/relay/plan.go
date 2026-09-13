@@ -31,7 +31,6 @@ type applyPlan struct {
 	Instance   plannedInstance
 	Database   plannedDatabase
 	Connection plannedConnection
-	ACL        plannedACL
 	Kafka      plannedKafka
 	Tables     []plannedTable
 	Connector  plannedConnector
@@ -53,12 +52,6 @@ type plannedConnection struct {
 	Database string
 	User     string
 	Secret   string
-}
-
-type plannedACL struct {
-	Principal string
-	Resource  string
-	Ops       []string
 }
 
 type plannedKafka struct {
@@ -133,11 +126,6 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 		Database: dbName,
 		User:     instName,
 		Secret:   instName,
-	}
-	plan.ACL = plannedACL{
-		Principal: prefix,
-		Resource:  prefix + ".",
-		Ops:       []string{"Read", "Write", "Describe"},
 	}
 	plan.Kafka = plannedKafka{Partitions: partitions, Replicas: replicas, MinInsyncReplicas: minISR}
 

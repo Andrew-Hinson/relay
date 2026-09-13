@@ -1,8 +1,8 @@
 terraform {
   required_providers {
-    kafka = {
-      source  = "Mongey/kafka"
-      version = "~> 0.8"
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
 }

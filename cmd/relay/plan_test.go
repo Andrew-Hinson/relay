@@ -168,19 +168,6 @@ func TestPlanApply_oneConnectorPerDatabase(t *testing.T) {
 	}
 }
 
-func TestPlanApply_derivesACLFromPrefix(t *testing.T) {
-	plan, err := planApply(validSpec(), liveSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.ACL.Resource != "acme." {
-		t.Fatalf("got ACL resource %q", plan.ACL.Resource)
-	}
-	if got := strings.Join(plan.ACL.Ops, ","); got != "Read,Write,Describe" {
-		t.Fatalf("got ops %q", got)
-	}
-}
-
 func TestPlanApply_kafkaDefaults(t *testing.T) {
 	plan, err := planApply(validSpec(), liveSnapshot{})
 	if err != nil {
