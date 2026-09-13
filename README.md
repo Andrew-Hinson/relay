@@ -33,9 +33,11 @@ Optional `prefix:` (default: Config name). Optional `kafka:` (`partitions`, `rep
 
 Org/secops creates a Secrets Manager secret named after the Instance (`user`, `password`, optional `host`) before Apply. YAML has no secret fields. The Debezium plugin ZIP must include the [MSK config-providers JAR](https://github.com/aws-samples/msk-config-providers/releases). `--msk-bootstrap-servers` must be the IAM listeners (port 9098). The Connect role needs `secretsmanager:GetSecretValue` and `DescribeSecret` on the Instance Secret, plus Cluster-level MSK Connect internals (`__amazon_msk_connect_*`). Apply attaches `kafka-cluster` on `{prefix}*` topics and groups to that role. Connect VPC needs a path to Secrets Manager. The Apply caller uses the default AWS credential chain for MSK IAM (topics) and `iam:PutRolePolicy` on the Connect role.
 
+Org also creates one Terraform state bucket per Cluster (versioning, encryption, Apply-caller IAM only). Not the Warehouse bucket. Apply stores state at `relay/<cluster>/<name>/terraform.tfstate`.
+
 ## Apply
 
-Reads the Config, applies Table DDL, and runs Terraform under `.relay/` (gitignored). You do not run Terraform.
+Reads the Config, applies Table DDL, and runs Terraform. State lives in the Cluster state bucket. `.relay/` (gitignored) is tfvars, SQL, and plugin cache. You do not run Terraform.
 
 ```bash
 # Parse example.yaml, create/attach Instance, apply DDL, attach CDC + Iceberg on the Cluster.
@@ -45,6 +47,7 @@ go run -C cmd/relay . apply -f example/example.yaml \
   --msk-bootstrap-servers "$BOOTSTRAP" \
   --msk-cluster-arn "$MSK_ARN" \
   --warehouse-bucket "$BUCKET" \
+  --state-bucket "$STATE_BUCKET" \
   --glue-database "$GLUE_DB" \
   --debezium-plugin-arn "$DEBEZIUM_PLUGIN" \
   --iceberg-plugin-arn "$ICEBERG_PLUGIN" \
@@ -53,7 +56,7 @@ go run -C cmd/relay . apply -f example/example.yaml \
   --connect-sg-ids "$CONNECT_SGS"
 ```
 
-When `instance.create` is true, also pass `--vpc-id`, `--subnet-ids`, `--rds-sg-ids`. Optional: `--rds-instance-class` (default `db.t3.medium`), `--rds-engine-version` (default `16`).
+When `instance.create` is true, also pass `--vpc-id`, `--subnet-ids`, `--rds-sg-ids`. Optional: `--rds-instance-class` (default `db.t3.medium`), `--rds-engine-version` (default `16`). One-shot `--migrate-state` copies a leftover `.relay/<name>/terraform.tfstate` into the Cluster bucket when that key is empty.
 
 Prints `endpoint`, `database`, `user`, `secret`. Never the password.
 

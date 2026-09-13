@@ -23,6 +23,8 @@ type clusterEnv struct {
 	RDSSGIds          []string
 	RDSInstanceClass  string
 	RDSEngineVersion  string
+	StateBucket       string
+	MigrateState      bool
 }
 
 func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
@@ -44,6 +46,8 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 	rdsSGs := fs.String("rds-sg-ids", envOr("RELAY_RDS_SG_IDS", ""), "RDS security group IDs (comma-separated)")
 	class := fs.String("rds-instance-class", envOr("RELAY_RDS_INSTANCE_CLASS", "db.t3.medium"), "RDS instance class")
 	engine := fs.String("rds-engine-version", envOr("RELAY_RDS_ENGINE_VERSION", "16"), "RDS engine version")
+	stateBucket := fs.String("state-bucket", envOr("RELAY_STATE_BUCKET", ""), "Cluster Terraform state bucket")
+	migrateState := fs.Bool("migrate-state", false, "one-shot copy of local terraform.tfstate to the Cluster state bucket")
 	if err := fs.Parse(args); err != nil {
 		return "", clusterEnv{}, err
 	}
@@ -66,6 +70,8 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 		RDSSGIds:          csv(*rdsSGs),
 		RDSInstanceClass:  *class,
 		RDSEngineVersion:  *engine,
+		StateBucket:       *stateBucket,
+		MigrateState:      *migrateState,
 	}
 	return *fileFlag, env, nil
 }
@@ -78,6 +84,7 @@ func (e clusterEnv) validate(createInstance bool) error {
 		{"--msk-bootstrap-servers / RELAY_MSK_BOOTSTRAP_SERVERS", e.MSKBootstrap},
 		{"--msk-cluster-arn / RELAY_MSK_CLUSTER_ARN", e.MSKClusterARN},
 		{"--warehouse-bucket / RELAY_WAREHOUSE_BUCKET", e.WarehouseBucket},
+		{"--state-bucket / RELAY_STATE_BUCKET", e.StateBucket},
 		{"--glue-database / RELAY_GLUE_DATABASE", e.GlueDatabase},
 		{"--debezium-plugin-arn / RELAY_DEBEZIUM_PLUGIN_ARN", e.DebeziumPluginARN},
 		{"--iceberg-plugin-arn / RELAY_ICEBERG_PLUGIN_ARN", e.IcebergPluginARN},
