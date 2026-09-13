@@ -151,7 +151,12 @@ variable "publication_name" {
 
 variable "sink_name" {
   type    = string
-  default = "example-service-example-service-iceberg"
+  default = "example-service-exampleservicedb-iceberg"
+}
+
+variable "sink_control_topic" {
+  type    = string
+  default = "example-service.control.iceberg"
 }
 
 variable "connector_hostname" {
@@ -168,9 +173,21 @@ variable "tables" {
   type = list(object({
     topic_name    = string
     iceberg_table = string
+    route_value   = string
+    id_columns    = string
+    columns = list(object({
+      name = string
+      type = string
+    }))
   }))
   default = [{
     topic_name    = "example-service.public.orders"
-    iceberg_table = "example-service_public_orders"
+    iceberg_table = "example_service_public_orders"
+    route_value   = "public.orders"
+    id_columns    = "id"
+    columns = [
+      { name = "id", type = "int" },
+      { name = "amount", type = "decimal(38,9)" },
+    ]
   }]
 }

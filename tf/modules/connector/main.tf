@@ -33,6 +33,10 @@ resource "aws_mskconnect_connector" "this" {
     "slot.name"                                 = replace(var.name, "-", "_")
     "publication.name"                          = var.publication_name
     "publication.autocreate.mode"               = "filtered"
+    "key.converter"                             = "org.apache.kafka.connect.json.JsonConverter"
+    "value.converter"                           = "org.apache.kafka.connect.json.JsonConverter"
+    "key.converter.schemas.enable"              = "true"
+    "value.converter.schemas.enable"            = "true"
     "topic.creation.enable"                     = "true"
     "topic.creation.default.partitions"         = tostring(var.partitions)
     "topic.creation.default.replication.factor" = tostring(var.replicas)

@@ -22,6 +22,16 @@ module "topic" {
   min_insync_replicas = var.min_insync_replicas
 }
 
+module "control_topic" {
+  source = "./modules/topic"
+
+  name                = var.sink_control_topic
+  partitions          = 1
+  replicas            = var.replicas
+  min_insync_replicas = var.min_insync_replicas
+  cleanup_policy      = "compact"
+}
+
 module "acl" {
   source = "./modules/acl"
 
@@ -53,14 +63,19 @@ module "connector" {
 module "sink" {
   source = "./modules/sink"
 
-  name              = var.sink_name
-  plugin_arn        = var.iceberg_plugin_arn
-  role_arn          = var.connect_role_arn
-  bootstrap_servers = var.msk_bootstrap_servers
-  subnet_ids        = var.connect_subnet_ids
-  security_groups   = var.connect_sg_ids
-  topics            = var.sink_topics
-  warehouse_bucket  = var.warehouse_bucket
-  glue_database     = var.glue_database
-  tables            = var.tables
+  name                 = var.sink_name
+  plugin_arn           = var.iceberg_plugin_arn
+  role_arn             = var.connect_role_arn
+  bootstrap_servers    = var.msk_bootstrap_servers
+  subnet_ids           = var.connect_subnet_ids
+  security_groups      = var.connect_sg_ids
+  topics               = var.sink_topics
+  control_topic        = var.sink_control_topic
+  control_group_prefix = var.connector_topic_prefix
+  region               = var.region
+  warehouse_bucket     = var.warehouse_bucket
+  glue_database        = var.glue_database
+  tables               = var.tables
+
+  depends_on = [module.control_topic]
 }
