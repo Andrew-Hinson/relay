@@ -1,6 +1,6 @@
 apiVersion: relay/v1
 kind: Config
-name: example-service
+name: example
 cluster: prod          # existing Cluster; file never creates one
 
 instance:

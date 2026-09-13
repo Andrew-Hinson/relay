@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -65,11 +64,29 @@ func parseConfig(raw []byte) (configFile, error) {
 	if spec.Name == "" {
 		return spec, errors.New("name is required")
 	}
+	if !rdsUserIdent(spec.Name) {
+		return spec, fmt.Errorf("name %q is not a valid identifier", spec.Name)
+	}
 	if spec.Cluster == "" {
 		return spec, errors.New("cluster is required")
 	}
+	if spec.Prefix != "" && !sqlIdent(spec.Prefix) {
+		return spec, fmt.Errorf("prefix %q is not a valid identifier", spec.Prefix)
+	}
+	if spec.Database.Name != "" && !sqlIdent(spec.Database.Name) {
+		return spec, fmt.Errorf("database %q is not a valid identifier", spec.Database.Name)
+	}
 	if !spec.Instance.Create && spec.Instance.Name == "" {
 		return spec, errors.New("attach instance requires name")
+	}
+	if spec.Instance.Name != "" {
+		ok := rdsUserIdent(spec.Instance.Name)
+		if !spec.Instance.Create {
+			ok = rdsIdent(spec.Instance.Name)
+		}
+		if !ok {
+			return spec, fmt.Errorf("instance name %q is not a valid identifier", spec.Instance.Name)
+		}
 	}
 	instName := instanceName(spec)
 	if len(instName) > 40 {
@@ -82,10 +99,19 @@ func parseConfig(raw []byte) (configFile, error) {
 		if tbl.Name == "" {
 			return spec, errors.New("table name is required")
 		}
+		if !sqlIdent(tbl.Name) {
+			return spec, fmt.Errorf("table %q is not a valid identifier", tbl.Name)
+		}
+		if tbl.Schema != "" && !sqlIdent(tbl.Schema) {
+			return spec, fmt.Errorf("schema %q is not a valid identifier", tbl.Schema)
+		}
 		hasPK := false
 		for _, col := range tbl.Columns {
 			if col.Name == "" {
 				return spec, errors.New("column name is required")
+			}
+			if !sqlIdent(col.Name) {
+				return spec, fmt.Errorf("column %q is not a valid identifier", col.Name)
 			}
 			if !allowedColumnTypes[col.Type] {
 				return spec, fmt.Errorf("column type %q is not allowed", col.Type)
@@ -113,13 +139,43 @@ func instanceName(spec configFile) string {
 
 func databaseName(spec configFile) string {
 	if spec.Database.Name != "" {
-		return sanitizeDatabaseName(spec.Database.Name)
+		return spec.Database.Name
 	}
-	return sanitizeDatabaseName(spec.Name) + "db"
+	return spec.Name + "db"
 }
 
-func sanitizeDatabaseName(name string) string {
-	return strings.ReplaceAll(strings.ToLower(name), "-", "")
+func sqlIdent(s string) bool {
+	return identCharset(s, true, false)
+}
+
+func rdsUserIdent(s string) bool {
+	return identCharset(s, false, false)
+}
+
+func rdsIdent(s string) bool {
+	return identCharset(s, false, true)
+}
+
+func identCharset(s string, underscore, hyphen bool) bool {
+	if s == "" {
+		return false
+	}
+	prevHyphen := false
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			prevHyphen = false
+		case i > 0 && r >= '0' && r <= '9':
+			prevHyphen = false
+		case i > 0 && underscore && r == '_':
+			prevHyphen = false
+		case i > 0 && hyphen && r == '-' && !prevHyphen:
+			prevHyphen = true
+		default:
+			return false
+		}
+	}
+	return !prevHyphen
 }
 
 var allowedColumnTypes = map[string]bool{

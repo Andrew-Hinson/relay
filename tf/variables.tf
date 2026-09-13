@@ -3,14 +3,9 @@ variable "region" {
   default = "us-east-1"
 }
 
-variable "cluster" {
-  type    = string
-  default = "prod"
-}
-
 variable "instance_name" {
   type    = string
-  default = "example-service"
+  default = "example"
 }
 
 variable "instance_create" {
@@ -20,7 +15,7 @@ variable "instance_create" {
 
 variable "database_name" {
   type    = string
-  default = "example-service"
+  default = "exampledb"
 }
 
 variable "msk_bootstrap_servers" {
@@ -68,11 +63,6 @@ variable "connect_sg_ids" {
   default = ["sg-00000000"]
 }
 
-variable "vpc_id" {
-  type    = string
-  default = "vpc-00000000"
-}
-
 variable "subnet_ids" {
   type    = list(string)
   default = ["subnet-00000000"]
@@ -100,7 +90,7 @@ variable "rds_username" {
 
 variable "secret_name" {
   type    = string
-  default = "example-service"
+  default = "example"
 }
 
 variable "secret_user_key" {
@@ -130,7 +120,7 @@ variable "min_insync_replicas" {
 
 variable "connector_name" {
   type    = string
-  default = "example-service-example-service-cdc"
+  default = "example-exampledb-cdc"
 }
 
 variable "connector_class" {
@@ -140,7 +130,7 @@ variable "connector_class" {
 
 variable "connector_database" {
   type    = string
-  default = "example-service"
+  default = "exampledb"
 }
 
 variable "table_include_list" {
@@ -150,22 +140,22 @@ variable "table_include_list" {
 
 variable "connector_topic_prefix" {
   type    = string
-  default = "example-service"
+  default = "example"
 }
 
 variable "publication_name" {
   type    = string
-  default = "example_service_example_service_cdc"
+  default = "example_exampledb_cdc"
 }
 
 variable "sink_name" {
   type    = string
-  default = "example-service-exampleservicedb-iceberg"
+  default = "example-exampledb-iceberg"
 }
 
 variable "sink_control_topic" {
   type    = string
-  default = "example-service.control.iceberg"
+  default = "example.control.iceberg"
 }
 
 variable "connector_hostname" {
@@ -175,7 +165,7 @@ variable "connector_hostname" {
 
 variable "sink_topics" {
   type    = list(string)
-  default = ["example-service.public.orders"]
+  default = ["example.public.orders"]
 }
 
 variable "tables" {
@@ -190,8 +180,8 @@ variable "tables" {
     }))
   }))
   default = [{
-    topic_name    = "example-service.public.orders"
-    iceberg_table = "example_service_public_orders"
+    topic_name    = "example.public.orders"
+    iceberg_table = "example_public_orders"
     route_value   = "public.orders"
     id_columns    = "id"
     columns = [
