@@ -20,7 +20,7 @@ The shared S3 bucket and Glue Iceberg catalog for a Cluster.
 _Avoid_: per-Config bucket, landing zone
 
 **Iceberg table**:
-The derived lake relation for a Table. BI reads it. Not a Relay object.
+The derived lake relation for a Table. Name is Glue-safe `[a-z0-9_]` (`example-service` + `public.orders` → `example_service_public_orders`). BI reads it. Not a Relay object.
 
 **Instance**:
 The RDS server a Config's Database lives on. A Config creates it or names an existing one.

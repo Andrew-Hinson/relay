@@ -31,6 +31,18 @@ variable "topics" {
   type = list(string)
 }
 
+variable "control_topic" {
+  type = string
+}
+
+variable "control_group_prefix" {
+  type = string
+}
+
+variable "region" {
+  type = string
+}
+
 variable "warehouse_bucket" {
   type = string
 }
@@ -43,6 +55,12 @@ variable "tables" {
   type = list(object({
     topic_name    = string
     iceberg_table = string
+    route_value   = string
+    id_columns    = string
+    columns = list(object({
+      name = string
+      type = string
+    }))
   }))
 }
 

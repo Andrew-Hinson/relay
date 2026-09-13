@@ -79,6 +79,7 @@ func renderTfvars(plan applyPlan, env clusterEnv) string {
 	writeStr(&b, "connector_topic_prefix", plan.Connector.TopicPrefix)
 	writeStr(&b, "publication_name", plan.Connector.Publication)
 	writeStr(&b, "sink_name", plan.Sink.Name)
+	writeStr(&b, "sink_control_topic", plan.Sink.ControlTopic)
 	writeStr(&b, "connector_hostname", plan.Connection.Endpoint)
 	writeList(&b, "sink_topics", plan.Sink.Topics)
 	b.WriteString("tables = [\n")
@@ -86,6 +87,17 @@ func renderTfvars(plan applyPlan, env clusterEnv) string {
 		b.WriteString("  {\n")
 		writeStrIndent(&b, "    ", "topic_name", t.Topic)
 		writeStrIndent(&b, "    ", "iceberg_table", t.Iceberg)
+		writeStrIndent(&b, "    ", "route_value", t.RouteValue)
+		writeStrIndent(&b, "    ", "id_columns", t.IDColumns)
+		b.WriteString("    columns = [\n")
+		for _, c := range t.Columns {
+			b.WriteString("      { name = ")
+			b.WriteString(strconv.Quote(c.Name))
+			b.WriteString(", type = ")
+			b.WriteString(strconv.Quote(c.Type))
+			b.WriteString(" },\n")
+		}
+		b.WriteString("    ]\n")
 		b.WriteString("  },\n")
 	}
 	b.WriteString("]\n")

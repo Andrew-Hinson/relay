@@ -76,6 +76,15 @@ func TestRenderTfvars_omitsPassword(t *testing.T) {
 	if !strings.Contains(out, "connector_name = \"acme-acmedb-cdc\"") {
 		t.Fatalf("missing connector: %s", out)
 	}
+	if !strings.Contains(out, "sink_control_topic = \"acme.control.iceberg\"") {
+		t.Fatalf("missing control topic: %s", out)
+	}
+	if !strings.Contains(out, "iceberg_table = \"acme_public_orders\"") {
+		t.Fatalf("missing iceberg table: %s", out)
+	}
+	if strings.Contains(out, "example-service_public") {
+		t.Fatalf("hyphenated Glue name in tfvars: %s", out)
+	}
 }
 
 func TestRenderTfvars_scopesConnectIAMByPrefix(t *testing.T) {
@@ -99,6 +108,32 @@ func TestRenderTfvars_scopesConnectIAMByPrefix(t *testing.T) {
 	}
 	if !strings.Contains(out, "msk_cluster_arn = \"arn:aws:kafka:us-east-1:000000000000:cluster/prod/00000000-0000-0000-0000-000000000000-0\"") {
 		t.Fatalf("missing cluster arn: %s", out)
+	}
+}
+
+func TestRenderTfvars_exampleYAMLUsesGlueSafeIcebergName(t *testing.T) {
+	spec := validSpec()
+	spec.Name = "example-service"
+	spec.Tables[0].Columns = []column{
+		{Name: "id", Type: "serial", PrimaryKey: true},
+		{Name: "amount", Type: "numeric", Nullable: boolPtr(false)},
+	}
+	plan, err := planApply(spec, liveSnapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := renderTfvars(plan, clusterEnv{Region: "us-east-1"})
+	if !strings.Contains(out, "iceberg_table = \"example_service_public_orders\"") {
+		t.Fatalf("missing glue-safe iceberg name: %s", out)
+	}
+	if strings.Contains(out, "example-service_public_orders") {
+		t.Fatalf("hyphenated Glue name: %s", out)
+	}
+	if !strings.Contains(out, "sink_control_topic = \"example-service.control.iceberg\"") {
+		t.Fatalf("missing control topic: %s", out)
+	}
+	if !strings.Contains(out, "{ name = \"amount\", type = \"decimal(38,9)\" }") {
+		t.Fatalf("missing iceberg columns: %s", out)
 	}
 }
 

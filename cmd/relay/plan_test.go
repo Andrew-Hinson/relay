@@ -61,6 +61,30 @@ func TestPlanApply_schemaOverride(t *testing.T) {
 	if plan.Tables[0].Iceberg != "acme_sales_orders" {
 		t.Fatalf("got iceberg %q", plan.Tables[0].Iceberg)
 	}
+	if plan.Tables[0].RouteValue != "sales.orders" {
+		t.Fatalf("got route %q", plan.Tables[0].RouteValue)
+	}
+}
+
+func TestPlanApply_icebergNameIsGlueSafe(t *testing.T) {
+	spec := validSpec()
+	spec.Name = "example-service"
+	plan, err := planApply(spec, liveSnapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Tables[0].Iceberg != "example_service_public_orders" {
+		t.Fatalf("got iceberg %q", plan.Tables[0].Iceberg)
+	}
+	if plan.Sink.ControlTopic != "example-service.control.iceberg" {
+		t.Fatalf("got control topic %q", plan.Sink.ControlTopic)
+	}
+	if plan.Tables[0].IDColumns != "id" {
+		t.Fatalf("got id columns %q", plan.Tables[0].IDColumns)
+	}
+	if len(plan.Tables[0].Columns) != 1 || plan.Tables[0].Columns[0] != (plannedColumn{Name: "id", Type: "int"}) {
+		t.Fatalf("got columns %+v", plan.Tables[0].Columns)
+	}
 }
 
 func TestPlanApply_instanceNameDefaultsToConfig(t *testing.T) {
@@ -283,6 +307,12 @@ func TestPlanApply_exampleYAML(t *testing.T) {
 	}
 	if plan.Tables[0].Topic != "example-service.public.orders" {
 		t.Fatalf("got topic %q", plan.Tables[0].Topic)
+	}
+	if plan.Tables[0].Iceberg != "example_service_public_orders" {
+		t.Fatalf("got iceberg %q", plan.Tables[0].Iceberg)
+	}
+	if plan.Sink.ControlTopic != "example-service.control.iceberg" {
+		t.Fatalf("got control topic %q", plan.Sink.ControlTopic)
 	}
 	if plan.Connector.TableIncludeList != "public.orders" {
 		t.Fatalf("got include %q", plan.Connector.TableIncludeList)

@@ -13,3 +13,8 @@ variable "replicas" {
 variable "min_insync_replicas" {
   type = number
 }
+
+variable "cleanup_policy" {
+  type    = string
+  default = "delete"
+}

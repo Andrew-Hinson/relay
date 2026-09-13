@@ -60,13 +60,21 @@ type plannedKafka struct {
 	MinInsyncReplicas int
 }
 
+type plannedColumn struct {
+	Name string
+	Type string
+}
+
 type plannedTable struct {
-	Name     string
-	Schema   string
-	Database string
-	Topic    string
-	Iceberg  string
-	DDL      string
+	Name       string
+	Schema     string
+	Database   string
+	Topic      string
+	Iceberg    string
+	RouteValue string
+	IDColumns  string
+	Columns    []plannedColumn
+	DDL        string
 }
 
 type plannedConnector struct {
@@ -79,8 +87,9 @@ type plannedConnector struct {
 }
 
 type plannedSink struct {
-	Name   string
-	Topics []string
+	Name         string
+	Topics       []string
+	ControlTopic string
 }
 
 func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
@@ -143,12 +152,15 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 		}
 		topic := prefix + "." + schema + "." + t.Name
 		plan.Tables = append(plan.Tables, plannedTable{
-			Name:     t.Name,
-			Schema:   schema,
-			Database: dbName,
-			Topic:    topic,
-			Iceberg:  prefix + "_" + schema + "_" + t.Name,
-			DDL:      tableDDL(schema, t.Name, t.Columns),
+			Name:       t.Name,
+			Schema:     schema,
+			Database:   dbName,
+			Topic:      topic,
+			Iceberg:    sanitizeGlueName(prefix + "_" + schema + "_" + t.Name),
+			RouteValue: schema + "." + t.Name,
+			IDColumns:  idColumns(t.Columns),
+			Columns:    icebergColumns(t.Columns),
+			DDL:        tableDDL(schema, t.Name, t.Columns),
 		})
 		include = append(include, schema+"."+t.Name)
 		topics = append(topics, topic)
@@ -164,10 +176,42 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 		Publication:      strings.ReplaceAll(connectorName, "-", "_"),
 	}
 	plan.Sink = plannedSink{
-		Name:   prefix + "-" + dbName + "-iceberg",
-		Topics: topics,
+		Name:         prefix + "-" + dbName + "-iceberg",
+		Topics:       topics,
+		ControlTopic: prefix + ".control.iceberg",
 	}
 	return plan, nil
+}
+
+func sanitizeGlueName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + ('a' - 'A')
+		default:
+			return '_'
+		}
+	}, name)
+}
+
+func idColumns(cols []column) string {
+	var pks []string
+	for _, col := range cols {
+		if col.PrimaryKey {
+			pks = append(pks, col.Name)
+		}
+	}
+	return strings.Join(pks, ",")
+}
+
+func icebergColumns(cols []column) []plannedColumn {
+	out := make([]plannedColumn, len(cols))
+	for i, col := range cols {
+		out[i] = plannedColumn{Name: col.Name, Type: icebergColumnTypes[col.Type]}
+	}
+	return out
 }
 
 func tableDDL(schema, name string, cols []column) string {
@@ -286,6 +330,16 @@ var sqlColumnTypes = map[string]string{
 	"boolean":     "BOOLEAN",
 	"timestamptz": "TIMESTAMPTZ",
 	"serial":      "SERIAL",
+}
+
+var icebergColumnTypes = map[string]string{
+	"integer":     "int",
+	"bigint":      "bigint",
+	"text":        "string",
+	"numeric":     "decimal(38,9)",
+	"boolean":     "boolean",
+	"timestamptz": "timestamp",
+	"serial":      "int",
 }
 
 const (

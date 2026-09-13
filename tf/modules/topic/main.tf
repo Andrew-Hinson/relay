@@ -5,5 +5,6 @@ resource "kafka_topic" "this" {
 
   config = {
     "min.insync.replicas" = tostring(var.min_insync_replicas)
+    "cleanup.policy"      = var.cleanup_policy
   }
 }
