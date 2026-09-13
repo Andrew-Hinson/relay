@@ -25,9 +25,9 @@ module "topic" {
 module "acl" {
   source = "./modules/acl"
 
-  principal = var.principal
-  prefix    = var.acl_resource
-  ops       = var.topic_ops
+  role_arn    = var.connect_role_arn
+  cluster_arn = var.msk_cluster_arn
+  prefix      = var.connector_topic_prefix
 }
 
 module "connector" {

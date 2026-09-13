@@ -119,21 +119,6 @@ variable "min_insync_replicas" {
   default = 2
 }
 
-variable "principal" {
-  type    = string
-  default = "example-service"
-}
-
-variable "acl_resource" {
-  type    = string
-  default = "example-service."
-}
-
-variable "topic_ops" {
-  type    = list(string)
-  default = ["Read", "Write", "Describe"]
-}
-
 variable "connector_name" {
   type    = string
   default = "example-service-example-service-cdc"
