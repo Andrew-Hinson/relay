@@ -164,6 +164,8 @@ func renderTfvars(plan applyPlan, env clusterEnv) string {
 	writeStr(&b, "debezium_plugin_arn", env.DebeziumPluginARN)
 	writeStr(&b, "iceberg_plugin_arn", env.IcebergPluginARN)
 	writeStr(&b, "connect_role_arn", env.ConnectRoleARN)
+	writeStr(&b, "connect_source_boundary_arn", env.ConnectSourceBoundaryARN)
+	writeStr(&b, "connect_worker_policy_arn", env.ConnectWorkerPolicyARN)
 	writeList(&b, "connect_subnet_ids", env.ConnectSubnetIDs)
 	writeList(&b, "connect_sg_ids", env.ConnectSGIds)
 	writeList(&b, "subnet_ids", env.SubnetIDs)

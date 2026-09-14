@@ -40,4 +40,7 @@ A named relation this Config owns. Columns are DDL. A primary key is required. T
 A Config override for resource names, defaulting to the Config name. Topics use `{prefix}.{schema}.{table}`.
 
 **Instance Secret**:
-The Secrets Manager store named after the Instance. Org creates it. Apply retrieves it on attach. On create, RDS manages the master secret; Apply and Debezium fetch that. Not in Config. Not in Terraform state.
+The Secrets Manager store named after the Instance. Org creates it. Apply retrieves it on attach. On create, RDS manages the master secret; Apply and Debezium fetch that. Debezium reads it through this Config's Connect source role, not the Cluster Connect role. Not in Config. Not in Terraform state.
+
+**Connect source role**:
+IAM role Apply creates for this Config's Debezium connector (`relay-connect-{prefix}-cdc`). Iceberg uses the Cluster Connect role. Only the source role may `GetSecretValue` on this Config's runtime secret.

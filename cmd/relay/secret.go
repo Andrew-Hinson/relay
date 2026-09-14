@@ -28,6 +28,18 @@ func parseInstanceSecret(raw []byte) (instanceCreds, error) {
 	return creds, nil
 }
 
+func describeSecretARN(name, region string) (string, error) {
+	out, err := exec.Command("aws", secretARNArgs(name, region)...).Output()
+	if err != nil {
+		return "", fmt.Errorf("instance secret %s: %w", name, err)
+	}
+	arn := strings.TrimSpace(string(out))
+	if arn == "" || arn == "None" {
+		return "", fmt.Errorf("instance secret %s: empty ARN", name)
+	}
+	return arn, nil
+}
+
 func retrieveInstanceSecret(name, region string) (instanceCreds, error) {
 	out, err := exec.Command("aws", secretValueArgs(name, region)...).Output()
 	if err != nil {
@@ -75,6 +87,10 @@ func resolveEndpoint(creds instanceCreds, instance, region string, create bool) 
 		return "", fmt.Errorf("instance endpoint %s is empty", instance)
 	}
 	return host, nil
+}
+
+func secretARNArgs(name, region string) []string {
+	return awsRegionArgs(region, "secretsmanager", "describe-secret", "--secret-id", name, "--query", "ARN", "--output", "text")
 }
 
 func secretValueArgs(name, region string) []string {

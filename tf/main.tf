@@ -31,13 +31,23 @@ module "control_topic" {
   cleanup_policy      = "compact"
 }
 
+module "source_role" {
+  source = "./modules/source_role"
+
+  prefix                   = var.connector_topic_prefix
+  connector_name           = var.connector_name
+  cluster_arn              = var.msk_cluster_arn
+  secret_arn               = var.master_secret_arn
+  permissions_boundary_arn = var.connect_source_boundary_arn
+  worker_policy_arn        = var.connect_worker_policy_arn
+}
+
 module "acl" {
   source = "./modules/acl"
 
   role_arn    = var.connect_role_arn
   cluster_arn = var.msk_cluster_arn
   prefix      = var.connector_topic_prefix
-  secret_arn  = var.master_secret_arn
 }
 
 module "connector" {
@@ -46,7 +56,7 @@ module "connector" {
   name               = var.connector_name
   class              = var.connector_class
   plugin_arn         = var.debezium_plugin_arn
-  role_arn           = var.connect_role_arn
+  role_arn           = module.source_role.arn
   bootstrap_servers  = var.msk_bootstrap_servers
   subnet_ids         = var.connect_subnet_ids
   security_groups    = var.connect_sg_ids
@@ -59,6 +69,8 @@ module "connector" {
   secret_user_key    = var.secret_user_key
   partitions         = var.partitions
   replicas           = var.replicas
+
+  depends_on = [module.source_role]
 }
 
 module "sink" {
