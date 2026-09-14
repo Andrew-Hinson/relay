@@ -90,46 +90,47 @@ func TestRenderTfvars_omitsPassword(t *testing.T) {
 	if strings.Contains(out, "example-service_public") {
 		t.Fatalf("hyphenated Glue name in tfvars: %s", out)
 	}
-	if !strings.Contains(out, "secret_name = \"acme\"") {
+	if !strings.Contains(out, "secret_name = \"relay/prod/acme/cdc\"") {
 		t.Fatalf("missing secret_name: %s", out)
 	}
-	if !strings.Contains(out, "secret_user_key = \"user\"") {
+	if !strings.Contains(out, "secret_user_key = \"username\"") {
 		t.Fatalf("missing secret_user_key: %s", out)
 	}
 }
 
-func TestRenderTfvars_createPassesMasterSecretARN(t *testing.T) {
+func TestRenderTfvars_passesConfigSecretARN(t *testing.T) {
 	plan, err := planApply(validSpec(), liveSnapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan.Connection.Secret = "rds!db-acme-AbCdEf"
-	plan.Connection.SecretARN = "arn:aws:secretsmanager:us-east-1:000000000000:secret:rds!db-acme-AbCdEf"
-	plan.Connection.SecretUserKey = "username"
+	plan.Connection.SecretARN = "arn:aws:secretsmanager:us-east-1:000000000000:secret:relay/prod/acme/cdc-AbCdEf"
 	out := renderTfvars(plan, clusterEnv{Region: "us-east-1"})
 	if strings.Contains(strings.ToLower(out), "password") {
 		t.Fatalf("password in tfvars: %s", out)
 	}
-	if !strings.Contains(out, "secret_name = \"rds!db-acme-AbCdEf\"") {
+	if !strings.Contains(out, "secret_name = \"relay/prod/acme/cdc\"") {
 		t.Fatalf("missing secret name: %s", out)
 	}
 	if !strings.Contains(out, "secret_user_key = \"username\"") {
 		t.Fatalf("missing user key: %s", out)
 	}
-	if !strings.Contains(out, "master_secret_arn = \"arn:aws:secretsmanager:us-east-1:000000000000:secret:rds!db-acme-AbCdEf\"") {
-		t.Fatalf("missing master secret arn: %s", out)
+	if !strings.Contains(out, "master_secret_arn = \"arn:aws:secretsmanager:us-east-1:000000000000:secret:relay/prod/acme/cdc-AbCdEf\"") {
+		t.Fatalf("missing config secret arn: %s", out)
 	}
 }
 
-func TestRenderTfvars_attachPassesInstanceSecretARN(t *testing.T) {
+func TestRenderTfvars_rdsUsernameIsInstanceNotConfigRole(t *testing.T) {
 	plan, err := planApply(validSpec(), liveSnapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan.Connection.SecretARN = "arn:aws:secretsmanager:us-east-1:000000000000:secret:acme-AbCdEf"
+	plan.Instance.Username = "relay"
 	out := renderTfvars(plan, clusterEnv{Region: "us-east-1"})
-	if !strings.Contains(out, "master_secret_arn = \"arn:aws:secretsmanager:us-east-1:000000000000:secret:acme-AbCdEf\"") {
-		t.Fatalf("missing instance secret arn: %s", out)
+	if !strings.Contains(out, "rds_username = \"relay\"") {
+		t.Fatalf("missing instance username: %s", out)
+	}
+	if strings.Contains(out, "rds_username = \"acme_acmedb_cdc\"") {
+		t.Fatal("RDS master must not be the Config role")
 	}
 }
 

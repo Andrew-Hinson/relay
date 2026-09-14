@@ -62,15 +62,8 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	plan.Connection.User = creds.User
 	plan.Connection.Endpoint = endpoint
-	if !spec.Instance.Create {
-		arn, err := describeSecretARN(instanceName(spec), env.Region)
-		if err != nil {
-			return err
-		}
-		plan.Connection.SecretARN = arn
-	}
+	plan.Instance.Username = creds.User
 	tfvarsPath, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 	if err != nil {
 		return err
@@ -97,7 +90,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		bindMasterSecret(&login, &plan, master, endpoint, arn)
+		bindMasterSecret(&login, &plan, master, endpoint)
 		if _, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan)); err != nil {
 			return err
 		}
@@ -109,13 +102,26 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		bindMasterSecret(&login, &plan, master, endpoint, arn)
+		bindMasterSecret(&login, &plan, master, endpoint)
 		tfvarsPath, _, err = writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 		if err != nil {
 			return err
 		}
 	}
-	if err := applySQL(login, plan); err != nil {
+	created, roleCreds, arn, err := ensureConfigSecret(plan.Connection.Secret, plan.Connection.User, env.Region)
+	if err != nil {
+		return err
+	}
+	if roleCreds.User != plan.Connection.User {
+		return fmt.Errorf("config secret %s user %q does not match role %q", plan.Connection.Secret, roleCreds.User, plan.Connection.User)
+	}
+	bindConfigSecret(&plan, roleCreds, arn)
+	tfvarsPath, _, err = writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
+	if err != nil {
+		return err
+	}
+	roleLogin := instanceLogin{Host: login.Host, User: roleCreds.User, Password: roleCreds.Password}
+	if err := applySQL(login, roleLogin, plan, created); err != nil {
 		return err
 	}
 	if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-var-file="+tfvarsPath); err != nil {

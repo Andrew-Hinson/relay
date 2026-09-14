@@ -102,7 +102,7 @@ func TestPlanApply_databaseDefaultsToConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Database.Name != "acmedb" || plan.Database.DDL != "CREATE DATABASE acmedb" {
+	if plan.Database.Name != "acmedb" || plan.Database.DDL != "CREATE DATABASE acmedb OWNER acme_acmedb_cdc" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
 }
@@ -114,7 +114,7 @@ func TestPlanApply_databaseNameOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Database.Name != "shop" || plan.Database.DDL != "CREATE DATABASE shop" {
+	if plan.Database.Name != "shop" || plan.Database.DDL != "CREATE DATABASE shop OWNER acme_shop_cdc" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
 }
@@ -129,15 +129,21 @@ func TestPlanApply_skipsDatabaseDDLWhenLiveHasIt(t *testing.T) {
 	}
 }
 
-func TestPlanApply_secretNamedAfterInstance(t *testing.T) {
+func TestPlanApply_configRoleNotInstanceSecret(t *testing.T) {
 	spec := validSpec()
 	spec.Instance.Name = "shared-rds"
 	plan, err := planApply(spec, liveSnapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Connection.Secret != "shared-rds" {
+	if plan.Connection.User != "acme_acmedb_cdc" {
+		t.Fatalf("got user %q", plan.Connection.User)
+	}
+	if plan.Connection.Secret != "relay/prod/acme/cdc" {
 		t.Fatalf("got secret %q", plan.Connection.Secret)
+	}
+	if plan.Connection.Secret == "shared-rds" {
+		t.Fatal("Debezium must not use the Instance Secret")
 	}
 }
 
@@ -293,7 +299,7 @@ func TestPlanApply_exampleYAML(t *testing.T) {
 	if plan.Connector.TableIncludeList != "public.orders" {
 		t.Fatalf("got include %q", plan.Connector.TableIncludeList)
 	}
-	if plan.Database.Name != "exampledb" || plan.Database.DDL != "CREATE DATABASE exampledb" {
+	if plan.Database.Name != "exampledb" || plan.Database.DDL != "CREATE DATABASE exampledb OWNER example_exampledb_cdc" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
 	if plan.Instance.Name != "example" || !plan.Instance.Create {

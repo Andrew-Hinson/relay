@@ -37,8 +37,9 @@ type applyPlan struct {
 }
 
 type plannedInstance struct {
-	Name   string
-	Create bool
+	Name     string
+	Create   bool
+	Username string
 }
 
 type plannedDatabase struct {
@@ -125,17 +126,18 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 
 	plan.Name = spec.Name
 	plan.Prefix = prefix
+	role := configRoleName(prefix, dbName)
 	plan.Instance = plannedInstance{Name: instName, Create: spec.Instance.Create}
 	plan.Database = plannedDatabase{Name: dbName}
 	if !liveHasDatabase(live, dbName) {
-		plan.Database.DDL = "CREATE DATABASE " + dbName
+		plan.Database.DDL = "CREATE DATABASE " + dbName + " OWNER " + role
 	}
 	plan.Connection = plannedConnection{
 		Endpoint:      instName,
 		Database:      dbName,
-		User:          instName,
-		Secret:        instName,
-		SecretUserKey: "user",
+		User:          role,
+		Secret:        configSecretName(spec.Cluster, spec.Name),
+		SecretUserKey: "username",
 	}
 	plan.Kafka = plannedKafka{Partitions: partitions, Replicas: replicas, MinInsyncReplicas: minISR}
 
@@ -182,6 +184,14 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 		ControlTopic: prefix + ".control.iceberg",
 	}
 	return plan, nil
+}
+
+func configRoleName(prefix, database string) string {
+	return strings.ReplaceAll(prefix+"-"+database+"-cdc", "-", "_")
+}
+
+func configSecretName(cluster, name string) string {
+	return "relay/" + cluster + "/" + name + "/cdc"
 }
 
 func sanitizeGlueName(name string) string {

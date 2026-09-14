@@ -151,19 +151,123 @@ func mapLiveType(pgType, def string) string {
 	return base
 }
 
-func applySQL(login instanceLogin, plan applyPlan) error {
+func applySQL(master, role instanceLogin, plan applyPlan, rotatePassword bool) error {
 	ctx := context.Background()
+	if err := ensureRole(ctx, master, role.User, role.Password, rotatePassword); err != nil {
+		return err
+	}
 	if plan.Database.DDL != "" {
-		if err := execSQL(ctx, login, "postgres", plan.Database.DDL); err != nil {
+		if err := execSQL(ctx, master, "postgres", plan.Database.DDL); err != nil {
 			return err
 		}
 	}
+	if err := grantDatabase(ctx, master, role.User, plan.Database.Name); err != nil {
+		return err
+	}
+	if err := grantSchemas(ctx, master, role.User, plan); err != nil {
+		return err
+	}
 	for _, tbl := range plan.Tables {
-		if err := execSQL(ctx, login, tbl.Database, tbl.DDL); err != nil {
+		if err := execSQL(ctx, role, tbl.Database, tbl.DDL); err != nil {
+			return err
+		}
+		if err := execSQL(ctx, master, tbl.Database, alterTableOwnerSQL(tbl.Schema, tbl.Name, role.User)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func ensureRole(ctx context.Context, master instanceLogin, name, password string, rotate bool) error {
+	conn, err := pgx.Connect(ctx, postgresURL(master, "postgres"))
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	var exists bool
+	if err := conn.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)", name).Scan(&exists); err != nil {
+		return err
+	}
+	switch {
+	case !exists:
+		if _, err := conn.Exec(ctx, "CREATE ROLE "+name+" WITH LOGIN PASSWORD "+quoteLiteral(password)); err != nil {
+			return err
+		}
+	case rotate:
+		if _, err := conn.Exec(ctx, "ALTER ROLE "+name+" PASSWORD "+quoteLiteral(password)); err != nil {
+			return err
+		}
+	}
+	_, err = conn.Exec(ctx, grantReplicationSQL(name))
+	return err
+}
+
+func grantDatabase(ctx context.Context, master instanceLogin, role, database string) error {
+	conn, err := pgx.Connect(ctx, postgresURL(master, "postgres"))
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, grantDatabaseSQL(role, database)); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, revokePublicConnectSQL(database)); err != nil {
+		return err
+	}
+	_, err = conn.Exec(ctx, alterDatabaseOwnerSQL(database, role))
+	return err
+}
+
+func grantSchemas(ctx context.Context, master instanceLogin, role string, plan applyPlan) error {
+	conn, err := pgx.Connect(ctx, postgresURL(master, plan.Database.Name))
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	seen := map[string]bool{}
+	for _, tbl := range plan.Tables {
+		if seen[tbl.Schema] {
+			continue
+		}
+		seen[tbl.Schema] = true
+		if tbl.Schema != "public" {
+			if _, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+tbl.Schema); err != nil {
+				return err
+			}
+		}
+		if _, err := conn.Exec(ctx, grantSchemaSQL(role, tbl.Schema)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func grantReplicationSQL(role string) string {
+	return "GRANT rds_replication TO " + role
+}
+
+func grantDatabaseSQL(role, database string) string {
+	return "GRANT CONNECT, CREATE ON DATABASE " + database + " TO " + role
+}
+
+func revokePublicConnectSQL(database string) string {
+	return "REVOKE CONNECT ON DATABASE " + database + " FROM PUBLIC"
+}
+
+func grantSchemaSQL(role, schema string) string {
+	return "GRANT USAGE, CREATE ON SCHEMA " + schema + " TO " + role
+}
+
+func alterTableOwnerSQL(schema, table, role string) string {
+	return "ALTER TABLE " + schema + "." + table + " OWNER TO " + role
+}
+
+func alterDatabaseOwnerSQL(database, role string) string {
+	return "ALTER DATABASE " + database + " OWNER TO " + role
+}
+
+func quoteLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 func execSQL(ctx context.Context, login instanceLogin, database, sql string) error {

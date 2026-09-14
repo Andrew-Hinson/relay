@@ -149,7 +149,7 @@ func renderTfvars(plan applyPlan, env clusterEnv) string {
 	writeStr(&b, "instance_name", plan.Instance.Name)
 	writeBool(&b, "instance_create", plan.Instance.Create)
 	writeStr(&b, "database_name", plan.Database.Name)
-	writeStr(&b, "rds_username", plan.Connection.User)
+	writeStr(&b, "rds_username", plan.Instance.Username)
 	writeStr(&b, "secret_name", plan.Connection.Secret)
 	key := plan.Connection.SecretUserKey
 	if key == "" {
