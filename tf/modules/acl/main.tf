@@ -24,14 +24,6 @@ data "aws_iam_policy_document" "connect" {
     actions   = ["kafka-cluster:AlterGroup", "kafka-cluster:DescribeGroup"]
     resources = ["${local.group_arn}/${var.prefix}*", "${local.group_arn}/connect-${var.prefix}*"]
   }
-
-  dynamic "statement" {
-    for_each = var.secret_arn == "" ? [] : [var.secret_arn]
-    content {
-      actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-      resources = [statement.value]
-    }
-  }
 }
 
 resource "aws_iam_role_policy" "connect" {

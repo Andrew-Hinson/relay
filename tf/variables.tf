@@ -53,6 +53,16 @@ variable "connect_role_arn" {
   default = "arn:aws:iam::000000000000:role/relay-connect"
 }
 
+variable "connect_source_boundary_arn" {
+  type    = string
+  default = "arn:aws:iam::000000000000:policy/relay-connect-source-boundary"
+}
+
+variable "connect_worker_policy_arn" {
+  type    = string
+  default = "arn:aws:iam::000000000000:policy/relay-connect-worker"
+}
+
 variable "connect_subnet_ids" {
   type    = list(string)
   default = ["subnet-00000000"]

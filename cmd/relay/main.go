@@ -64,6 +64,13 @@ func run(args []string) error {
 	}
 	plan.Connection.User = creds.User
 	plan.Connection.Endpoint = endpoint
+	if !spec.Instance.Create {
+		arn, err := describeSecretARN(instanceName(spec), env.Region)
+		if err != nil {
+			return err
+		}
+		plan.Connection.SecretARN = arn
+	}
 	tfvarsPath, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 	if err != nil {
 		return err

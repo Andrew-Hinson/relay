@@ -1,0 +1,84 @@
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+locals {
+  role_name = "relay-connect-${replace(var.prefix, ".", "-")}-cdc"
+  topic_arn = "${replace(var.cluster_arn, ":cluster/", ":topic/")}/${var.prefix}*"
+  group_arn = replace(var.cluster_arn, ":cluster/", ":group/")
+}
+
+data "aws_iam_policy_document" "trust" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["kafkaconnect.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:kafkaconnect:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:connector/${var.connector_name}/*"]
+    }
+  }
+}
+
+resource "aws_iam_role" "this" {
+  name                 = local.role_name
+  permissions_boundary = var.permissions_boundary_arn
+  assume_role_policy   = data.aws_iam_policy_document.trust.json
+}
+
+resource "aws_iam_role_policy_attachment" "worker" {
+  role       = aws_iam_role.this.name
+  policy_arn = var.worker_policy_arn
+}
+
+data "aws_iam_policy_document" "kafka" {
+  statement {
+    actions   = ["kafka-cluster:Connect", "kafka-cluster:DescribeCluster", "kafka-cluster:WriteDataIdempotently"]
+    resources = [var.cluster_arn]
+  }
+
+  statement {
+    actions = [
+      "kafka-cluster:CreateTopic",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData",
+      "kafka-cluster:ReadData",
+    ]
+    resources = [local.topic_arn]
+  }
+
+  statement {
+    actions   = ["kafka-cluster:AlterGroup", "kafka-cluster:DescribeGroup"]
+    resources = ["${local.group_arn}/${var.prefix}*", "${local.group_arn}/connect-${var.prefix}*"]
+  }
+}
+
+resource "aws_iam_role_policy" "kafka" {
+  name   = "${replace(var.prefix, ".", "-")}-topics"
+  role   = aws_iam_role.this.id
+  policy = data.aws_iam_policy_document.kafka.json
+}
+
+data "aws_iam_policy_document" "secret" {
+  count = var.secret_arn == "" ? 0 : 1
+
+  statement {
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [var.secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "secret" {
+  count = var.secret_arn == "" ? 0 : 1
+
+  name   = "${replace(var.prefix, ".", "-")}-secret"
+  role   = aws_iam_role.this.id
+  policy = data.aws_iam_policy_document.secret[0].json
+}

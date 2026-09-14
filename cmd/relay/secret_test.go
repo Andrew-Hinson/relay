@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestSecretARNArgs_passesRegion(t *testing.T) {
+	got := strings.Join(secretARNArgs("shared-rds", "eu-west-1"), " ")
+	if !strings.Contains(got, "secretsmanager describe-secret --secret-id shared-rds") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "--query ARN") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "--region eu-west-1") {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestSecretValueArgs_passesRegion(t *testing.T) {
 	got := strings.Join(secretValueArgs("shared-rds", "eu-west-1"), " ")
 	if !strings.Contains(got, "--secret-id shared-rds") {

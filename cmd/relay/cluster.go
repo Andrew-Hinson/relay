@@ -8,22 +8,24 @@ import (
 )
 
 type clusterEnv struct {
-	Region            string
-	MSKBootstrap      string
-	MSKClusterARN     string
-	WarehouseBucket   string
-	GlueDatabase      string
-	DebeziumPluginARN string
-	IcebergPluginARN  string
-	ConnectRoleARN    string
-	ConnectSubnetIDs  []string
-	ConnectSGIds      []string
-	SubnetIDs         []string
-	RDSSGIds          []string
-	RDSInstanceClass  string
-	RDSEngineVersion  string
-	StateBucket       string
-	MigrateState      bool
+	Region                   string
+	MSKBootstrap             string
+	MSKClusterARN            string
+	WarehouseBucket          string
+	GlueDatabase             string
+	DebeziumPluginARN        string
+	IcebergPluginARN         string
+	ConnectRoleARN           string
+	ConnectSourceBoundaryARN string
+	ConnectWorkerPolicyARN   string
+	ConnectSubnetIDs         []string
+	ConnectSGIds             []string
+	SubnetIDs                []string
+	RDSSGIds                 []string
+	RDSInstanceClass         string
+	RDSEngineVersion         string
+	StateBucket              string
+	MigrateState             bool
 }
 
 func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
@@ -37,7 +39,9 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 	glue := fs.String("glue-database", envOr("RELAY_GLUE_DATABASE", ""), "Glue database")
 	debezium := fs.String("debezium-plugin-arn", envOr("RELAY_DEBEZIUM_PLUGIN_ARN", ""), "MSK Connect Debezium plugin ARN")
 	iceberg := fs.String("iceberg-plugin-arn", envOr("RELAY_ICEBERG_PLUGIN_ARN", ""), "MSK Connect Iceberg plugin ARN")
-	role := fs.String("connect-role-arn", envOr("RELAY_CONNECT_ROLE_ARN", ""), "MSK Connect service role ARN")
+	role := fs.String("connect-role-arn", envOr("RELAY_CONNECT_ROLE_ARN", ""), "MSK Connect sink role ARN")
+	sourceBoundary := fs.String("connect-source-boundary-arn", envOr("RELAY_CONNECT_SOURCE_BOUNDARY_ARN", ""), "permissions boundary for the Debezium source role")
+	workerPolicy := fs.String("connect-worker-policy-arn", envOr("RELAY_CONNECT_WORKER_POLICY_ARN", ""), "managed policy for MSK Connect workers")
 	connectSubnets := fs.String("connect-subnet-ids", envOr("RELAY_CONNECT_SUBNET_IDS", ""), "MSK Connect subnet IDs (comma-separated)")
 	connectSGs := fs.String("connect-sg-ids", envOr("RELAY_CONNECT_SG_IDS", ""), "MSK Connect security group IDs (comma-separated)")
 	subnets := fs.String("subnet-ids", envOr("RELAY_SUBNET_IDS", ""), "RDS subnet IDs (comma-separated)")
@@ -53,22 +57,24 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 		return "", clusterEnv{}, errors.New("usage: relay apply -f <config.yaml>")
 	}
 	env = clusterEnv{
-		Region:            *region,
-		MSKBootstrap:      *msk,
-		MSKClusterARN:     *mskARN,
-		WarehouseBucket:   *bucket,
-		GlueDatabase:      *glue,
-		DebeziumPluginARN: *debezium,
-		IcebergPluginARN:  *iceberg,
-		ConnectRoleARN:    *role,
-		ConnectSubnetIDs:  csv(*connectSubnets),
-		ConnectSGIds:      csv(*connectSGs),
-		SubnetIDs:         csv(*subnets),
-		RDSSGIds:          csv(*rdsSGs),
-		RDSInstanceClass:  *class,
-		RDSEngineVersion:  *engine,
-		StateBucket:       *stateBucket,
-		MigrateState:      *migrateState,
+		Region:                   *region,
+		MSKBootstrap:             *msk,
+		MSKClusterARN:            *mskARN,
+		WarehouseBucket:          *bucket,
+		GlueDatabase:             *glue,
+		DebeziumPluginARN:        *debezium,
+		IcebergPluginARN:         *iceberg,
+		ConnectRoleARN:           *role,
+		ConnectSourceBoundaryARN: *sourceBoundary,
+		ConnectWorkerPolicyARN:   *workerPolicy,
+		ConnectSubnetIDs:         csv(*connectSubnets),
+		ConnectSGIds:             csv(*connectSGs),
+		SubnetIDs:                csv(*subnets),
+		RDSSGIds:                 csv(*rdsSGs),
+		RDSInstanceClass:         *class,
+		RDSEngineVersion:         *engine,
+		StateBucket:              *stateBucket,
+		MigrateState:             *migrateState,
 	}
 	return *fileFlag, env, nil
 }
@@ -86,6 +92,8 @@ func (e clusterEnv) validate(createInstance bool) error {
 		{"--debezium-plugin-arn / RELAY_DEBEZIUM_PLUGIN_ARN", e.DebeziumPluginARN},
 		{"--iceberg-plugin-arn / RELAY_ICEBERG_PLUGIN_ARN", e.IcebergPluginARN},
 		{"--connect-role-arn / RELAY_CONNECT_ROLE_ARN", e.ConnectRoleARN},
+		{"--connect-source-boundary-arn / RELAY_CONNECT_SOURCE_BOUNDARY_ARN", e.ConnectSourceBoundaryARN},
+		{"--connect-worker-policy-arn / RELAY_CONNECT_WORKER_POLICY_ARN", e.ConnectWorkerPolicyARN},
 	}
 	for _, r := range required {
 		if r.val == "" {
