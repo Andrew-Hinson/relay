@@ -182,7 +182,23 @@ func TestRenderTfvars_exampleYAMLUsesGlueSafeIcebergName(t *testing.T) {
 
 func TestParseApplyFlags_requiresFile(t *testing.T) {
 	if _, _, err := parseApplyFlags(nil); err == nil {
-		t.Fatal("expected error when -f is missing")
+		t.Fatal("expected error when config path is missing")
+	}
+}
+
+func TestParseApplyFlags_positionalFile(t *testing.T) {
+	file, _, err := parseApplyFlags([]string{"x.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file != "x.yaml" {
+		t.Fatalf("got %q", file)
+	}
+}
+
+func TestParseApplyFlags_rejectsFileAndPositional(t *testing.T) {
+	if _, _, err := parseApplyFlags([]string{"-f", "x.yaml", "y.yaml"}); err == nil {
+		t.Fatal("expected error when -f and positional both set")
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 )
 
+var errUsage = errors.New("usage: relay apply|plan <config.yaml>")
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -15,22 +17,58 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) == 0 || args[0] != "apply" {
-		return errors.New("usage: relay apply -f <config.yaml>")
+	if len(args) == 0 {
+		return errUsage
 	}
-	file, env, err := parseApplyFlags(args[1:])
+	switch args[0] {
+	case "apply":
+		return runApply(args[1:])
+	case "plan":
+		return runPlan(args[1:])
+	default:
+		return errUsage
+	}
+}
+
+func loadConfig(args []string) (configFile, clusterEnv, error) {
+	file, env, err := parseApplyFlags(args)
 	if err != nil {
-		return err
+		return configFile{}, clusterEnv{}, err
 	}
 	raw, err := readYAML(file)
 	if err != nil {
-		return err
+		return configFile{}, clusterEnv{}, err
 	}
 	spec, err := parseConfig(raw)
 	if err != nil {
-		return err
+		return configFile{}, clusterEnv{}, err
 	}
 	if err := env.validate(spec.Instance.Create); err != nil {
+		return configFile{}, clusterEnv{}, err
+	}
+	return spec, env, nil
+}
+
+func runPlan(args []string) error {
+	spec, env, err := loadConfig(args)
+	if err != nil {
+		return err
+	}
+	live, instancePresent, err := liveForPlan(spec, env)
+	if err != nil {
+		return err
+	}
+	plan, err := planApply(spec, live)
+	if err != nil {
+		return err
+	}
+	fmt.Print(formatPlanDiff(diffPlan(plan, live, instancePresent)))
+	return nil
+}
+
+func runApply(args []string) error {
+	spec, env, err := loadConfig(args)
+	if err != nil {
 		return err
 	}
 	tfDir, err := findTFDir()

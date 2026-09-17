@@ -1,9 +1,19 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestInstanceNotFound(t *testing.T) {
+	if !instanceNotFound(errors.New("instance acme: An error occurred (DBInstanceNotFound) when calling the DescribeDBInstances operation")) {
+		t.Fatal("expected not-found")
+	}
+	if instanceNotFound(errors.New("instance acme: AccessDenied")) {
+		t.Fatal("access denied is not missing")
+	}
+}
 
 func TestParseDBInstance_requiresIAM(t *testing.T) {
 	info, err := parseDBInstance([]byte(`{"host":"db.example","user":"relay","iam":true}`))

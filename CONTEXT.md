@@ -11,6 +11,9 @@ _Avoid_: Project, manifest, Relay file
 **Apply**:
 Reconciliation of a Config. v1 has no destroy.
 
+**Plan**:
+Dry-run of Apply. Prints create vs teardown from Config vs live. Teardown is Config membership (Table, topic, Iceberg table). Apply does not DROP Postgres.
+
 **Cluster**:
 A named shared MSK, Connect, and Warehouse. A Config names it and never creates it.
 _Avoid_: kind, per-Config Kafka

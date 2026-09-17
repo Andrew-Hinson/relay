@@ -389,6 +389,92 @@ func formatConnection(conn plannedConnection) string {
 		"auth: iam\n"
 }
 
+type planLine struct {
+	Kind string
+	Name string
+}
+
+type planDiff struct {
+	Create   []planLine
+	Teardown []planLine
+}
+
+func diffPlan(plan applyPlan, live liveSnapshot, instancePresent bool) planDiff {
+	var d planDiff
+	if plan.Instance.Create && !instancePresent {
+		d.Create = append(d.Create, planLine{"instance", plan.Instance.Name})
+	}
+	if plan.Database.DDL != "" {
+		d.Create = append(d.Create, planLine{"database", plan.Database.Name})
+	}
+	wanted := make(map[string]plannedTable, len(plan.Tables))
+	for _, tbl := range plan.Tables {
+		key := tbl.Schema + "." + tbl.Name
+		wanted[key] = tbl
+		if _, ok := findLiveTable(live, tbl.Database, tbl.Schema, tbl.Name); ok {
+			continue
+		}
+		d.Create = append(d.Create,
+			planLine{"table", key},
+			planLine{"topic", tbl.Topic},
+			planLine{"iceberg", tbl.Iceberg},
+		)
+	}
+	for _, lt := range live.Tables {
+		if lt.Database != plan.Database.Name {
+			continue
+		}
+		key := lt.Schema + "." + lt.Name
+		if _, ok := wanted[key]; ok {
+			continue
+		}
+		d.Teardown = append(d.Teardown,
+			planLine{"table", key},
+			planLine{"topic", plan.Prefix + "." + lt.Schema + "." + lt.Name},
+			planLine{"iceberg", sanitizeGlueName(plan.Prefix + "_" + lt.Schema + "_" + lt.Name)},
+		)
+	}
+	if plan.Connector.PublicationDDL != "" {
+		d.Create = append(d.Create,
+			planLine{"publication", plan.Connector.Publication},
+			planLine{"connector", plan.Connector.Name},
+			planLine{"sink", plan.Sink.Name},
+		)
+	}
+	return d
+}
+
+func formatPlanDiff(d planDiff) string {
+	if len(d.Create) == 0 && len(d.Teardown) == 0 {
+		return "No changes.\n"
+	}
+	var b strings.Builder
+	if len(d.Create) > 0 {
+		b.WriteString("create\n")
+		for _, l := range d.Create {
+			b.WriteString("  + ")
+			b.WriteString(l.Kind)
+			b.WriteByte(' ')
+			b.WriteString(l.Name)
+			b.WriteByte('\n')
+		}
+	}
+	if len(d.Teardown) > 0 {
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString("teardown\n")
+		for _, l := range d.Teardown {
+			b.WriteString("  - ")
+			b.WriteString(l.Kind)
+			b.WriteByte(' ')
+			b.WriteString(l.Name)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
 var sqlColumnTypes = map[string]string{
 	"integer":     "INTEGER",
 	"bigint":      "BIGINT",
