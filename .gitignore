@@ -73,8 +73,5 @@ CONTEXT-MAP.md
 
 # Local agent skill config + tickets
 AGENTS.md
-docs/agents/
 .scratch/
-docs/*
-!docs/adr/
-!docs/adr/**
+docs/
