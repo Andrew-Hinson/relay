@@ -6,8 +6,14 @@ import (
 )
 
 type liveSnapshot struct {
-	Databases []string
-	Tables    []liveTable
+	Databases    []string
+	Tables       []liveTable
+	Publications []livePublication
+}
+
+type livePublication struct {
+	Name   string
+	Tables []string
 }
 
 type liveTable struct {
@@ -30,6 +36,7 @@ type applyPlan struct {
 	Instance   plannedInstance
 	Database   plannedDatabase
 	Connection plannedConnection
+	CDC        plannedCDC
 	Kafka      plannedKafka
 	Tables     []plannedTable
 	Connector  plannedConnector
@@ -37,8 +44,9 @@ type applyPlan struct {
 }
 
 type plannedInstance struct {
-	Name   string
-	Create bool
+	Name     string
+	Create   bool
+	Username string
 }
 
 type plannedDatabase struct {
@@ -47,12 +55,13 @@ type plannedDatabase struct {
 }
 
 type plannedConnection struct {
-	Endpoint      string
-	Database      string
-	User          string
-	Secret        string
-	SecretARN     string
-	SecretUserKey string
+	Endpoint string
+	Database string
+	User     string
+}
+
+type plannedCDC struct {
+	User string
 }
 
 type plannedKafka struct {
@@ -85,6 +94,9 @@ type plannedConnector struct {
 	TableIncludeList string
 	TopicPrefix      string
 	Publication      string
+	PublicationDDL   string
+	PublicationAdds  []string
+	PublicationOwner string
 }
 
 type plannedSink struct {
@@ -125,18 +137,19 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 
 	plan.Name = spec.Name
 	plan.Prefix = prefix
+	owner := ownerRoleName(prefix, dbName)
+	cdc := cdcRoleName(prefix, dbName)
 	plan.Instance = plannedInstance{Name: instName, Create: spec.Instance.Create}
 	plan.Database = plannedDatabase{Name: dbName}
 	if !liveHasDatabase(live, dbName) {
-		plan.Database.DDL = "CREATE DATABASE " + dbName
+		plan.Database.DDL = "CREATE DATABASE " + dbName + " OWNER " + owner
 	}
 	plan.Connection = plannedConnection{
-		Endpoint:      instName,
-		Database:      dbName,
-		User:          instName,
-		Secret:        instName,
-		SecretUserKey: "user",
+		Endpoint: instName,
+		Database: dbName,
+		User:     owner,
 	}
+	plan.CDC = plannedCDC{User: cdc}
 	plan.Kafka = plannedKafka{Partitions: partitions, Replicas: replicas, MinInsyncReplicas: minISR}
 
 	var include []string
@@ -168,20 +181,50 @@ func planApply(spec configFile, live liveSnapshot) (applyPlan, error) {
 	}
 
 	connectorName := prefix + "-" + dbName + "-cdc"
+	pubName := strings.ReplaceAll(connectorName, "-", "_")
 	plan.Connector = plannedConnector{
 		Name:             connectorName,
 		Class:            debeziumPostgresClass,
 		Database:         dbName,
 		TableIncludeList: strings.Join(include, ","),
 		TopicPrefix:      prefix,
-		Publication:      strings.ReplaceAll(connectorName, "-", "_"),
+		Publication:      pubName,
+		PublicationOwner: alterPublicationOwnerSQL(pubName, owner),
 	}
+	planPublication(live, &plan)
 	plan.Sink = plannedSink{
 		Name:         prefix + "-" + dbName + "-iceberg",
 		Topics:       topics,
 		ControlTopic: prefix + ".control.iceberg",
 	}
 	return plan, nil
+}
+
+func ownerRoleName(prefix, database string) string {
+	return strings.ReplaceAll(prefix+"-"+database, "-", "_")
+}
+
+func cdcRoleName(prefix, database string) string {
+	return ownerRoleName(prefix, database) + "_cdc"
+}
+
+func planPublication(live liveSnapshot, plan *applyPlan) {
+	name := plan.Connector.Publication
+	livePub, ok := findLivePublication(live, name)
+	if !ok {
+		plan.Connector.PublicationDDL = createPublicationSQL(name, plan.Tables)
+		return
+	}
+	have := map[string]bool{}
+	for _, rel := range livePub.Tables {
+		have[rel] = true
+	}
+	for _, tbl := range plan.Tables {
+		rel := tbl.Schema + "." + tbl.Name
+		if !have[rel] {
+			plan.Connector.PublicationAdds = append(plan.Connector.PublicationAdds, alterPublicationAddSQL(name, tbl.Schema, tbl.Name))
+		}
+	}
 }
 
 func sanitizeGlueName(name string) string {
@@ -261,6 +304,15 @@ func liveHasDatabase(live liveSnapshot, name string) bool {
 	return false
 }
 
+func findLivePublication(live liveSnapshot, name string) (livePublication, bool) {
+	for _, pub := range live.Publications {
+		if pub.Name == name {
+			return pub, true
+		}
+	}
+	return livePublication{}, false
+}
+
 func findLiveTable(live liveSnapshot, database, schema, name string) (liveTable, bool) {
 	for _, tbl := range live.Tables {
 		if tbl.Database == database && tbl.Schema == schema && tbl.Name == name {
@@ -313,6 +365,20 @@ func renderApplySQL(plan applyPlan) string {
 		b.WriteString(tbl.DDL)
 		b.WriteByte('\n')
 	}
+	if plan.Connector.PublicationDDL != "" {
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(plan.Connector.PublicationDDL)
+		b.WriteByte('\n')
+	}
+	for _, add := range plan.Connector.PublicationAdds {
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(add)
+		b.WriteByte('\n')
+	}
 	return b.String()
 }
 
@@ -320,7 +386,7 @@ func formatConnection(conn plannedConnection) string {
 	return "endpoint: " + conn.Endpoint + "\n" +
 		"database: " + conn.Database + "\n" +
 		"user: " + conn.User + "\n" +
-		"secret: " + conn.Secret + "\n"
+		"auth: iam\n"
 }
 
 var sqlColumnTypes = map[string]string{
@@ -349,4 +415,5 @@ const (
 	defaultReplicas       = 3
 	defaultMinISR         = 2
 	postgresPort          = "5432"
+	defaultRDSUser        = "relay"
 )

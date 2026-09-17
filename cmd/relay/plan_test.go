@@ -102,7 +102,7 @@ func TestPlanApply_databaseDefaultsToConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Database.Name != "acmedb" || plan.Database.DDL != "CREATE DATABASE acmedb" {
+	if plan.Database.Name != "acmedb" || plan.Database.DDL != "CREATE DATABASE acmedb OWNER acme_acmedb" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
 }
@@ -114,7 +114,7 @@ func TestPlanApply_databaseNameOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Database.Name != "shop" || plan.Database.DDL != "CREATE DATABASE shop" {
+	if plan.Database.Name != "shop" || plan.Database.DDL != "CREATE DATABASE shop OWNER acme_shop" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
 }
@@ -129,15 +129,18 @@ func TestPlanApply_skipsDatabaseDDLWhenLiveHasIt(t *testing.T) {
 	}
 }
 
-func TestPlanApply_secretNamedAfterInstance(t *testing.T) {
+func TestPlanApply_printedConnectionIsOwnerNotCDC(t *testing.T) {
 	spec := validSpec()
 	spec.Instance.Name = "shared-rds"
 	plan, err := planApply(spec, liveSnapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Connection.Secret != "shared-rds" {
-		t.Fatalf("got secret %q", plan.Connection.Secret)
+	if plan.Connection.User != "acme_acmedb" {
+		t.Fatalf("got user %q", plan.Connection.User)
+	}
+	if plan.CDC.User != "acme_acmedb_cdc" {
+		t.Fatalf("got CDC user %q", plan.CDC.User)
 	}
 }
 
@@ -159,6 +162,9 @@ func TestPlanApply_oneConnectorPerDatabase(t *testing.T) {
 	}
 	if plan.Connector.Publication != "acme_acmedb_cdc" {
 		t.Fatalf("got publication %q", plan.Connector.Publication)
+	}
+	if plan.Connector.PublicationDDL != "CREATE PUBLICATION acme_acmedb_cdc FOR TABLE public.orders, public.items" {
+		t.Fatalf("got publication DDL %q", plan.Connector.PublicationDDL)
 	}
 	if plan.Sink.Name != "acme-acmedb-iceberg" {
 		t.Fatalf("got sink %q", plan.Sink.Name)
@@ -259,6 +265,54 @@ func TestPlanApply_reApplySucceedsWhenLiveMatchesYAML(t *testing.T) {
 	if strings.Contains(plan.Tables[0].DDL, "ALTER") {
 		t.Fatal("re-Apply must not ALTER")
 	}
+	if plan.Connector.PublicationDDL != "CREATE PUBLICATION acme_acmedb_cdc FOR TABLE public.orders" {
+		t.Fatalf("got publication DDL %q", plan.Connector.PublicationDDL)
+	}
+}
+
+func TestPlanApply_skipsPublicationWhenLiveHasIt(t *testing.T) {
+	live := liveSnapshot{
+		Databases: []string{"acmedb"},
+		Tables: []liveTable{{
+			Database: "acmedb",
+			Schema:   "public",
+			Name:     "orders",
+			Columns:  []liveColumn{{Name: "id", Type: "serial", PrimaryKey: true}},
+		}},
+		Publications: []livePublication{{Name: "acme_acmedb_cdc", Tables: []string{"public.orders"}}},
+	}
+	plan, err := planApply(validSpec(), live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Connector.PublicationDDL != "" {
+		t.Fatalf("got publication DDL %q", plan.Connector.PublicationDDL)
+	}
+	if len(plan.Connector.PublicationAdds) != 0 {
+		t.Fatalf("got adds %v", plan.Connector.PublicationAdds)
+	}
+}
+
+func TestPlanApply_addsNewTableToLivePublication(t *testing.T) {
+	spec := validSpec()
+	spec.Tables = append(spec.Tables, table{
+		Name:    "items",
+		Columns: []column{{Name: "id", Type: "serial", PrimaryKey: true}},
+	})
+	live := liveSnapshot{
+		Databases:    []string{"acmedb"},
+		Publications: []livePublication{{Name: "acme_acmedb_cdc", Tables: []string{"public.orders"}}},
+	}
+	plan, err := planApply(spec, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Connector.PublicationDDL != "" {
+		t.Fatalf("got publication DDL %q", plan.Connector.PublicationDDL)
+	}
+	if len(plan.Connector.PublicationAdds) != 1 || plan.Connector.PublicationAdds[0] != "ALTER PUBLICATION acme_acmedb_cdc ADD TABLE public.items" {
+		t.Fatalf("got adds %v", plan.Connector.PublicationAdds)
+	}
 }
 
 func TestPlanApply_exampleYAML(t *testing.T) {
@@ -293,7 +347,7 @@ func TestPlanApply_exampleYAML(t *testing.T) {
 	if plan.Connector.TableIncludeList != "public.orders" {
 		t.Fatalf("got include %q", plan.Connector.TableIncludeList)
 	}
-	if plan.Database.Name != "exampledb" || plan.Database.DDL != "CREATE DATABASE exampledb" {
+	if plan.Database.Name != "exampledb" || plan.Database.DDL != "CREATE DATABASE exampledb OWNER example_exampledb" {
 		t.Fatalf("got Database %+v", plan.Database)
 	}
 	if plan.Instance.Name != "example" || !plan.Instance.Create {
@@ -306,12 +360,14 @@ func TestFormatConnection_omitsPassword(t *testing.T) {
 		Endpoint: "db.example",
 		Database: "acme",
 		User:     "acme",
-		Secret:   "acme",
 	})
 	if strings.Contains(strings.ToLower(out), "password") {
 		t.Fatalf("password leaked: %s", out)
 	}
-	if !strings.Contains(out, "secret: acme") {
+	if strings.Contains(out, "secret:") {
+		t.Fatalf("secret leaked: %s", out)
+	}
+	if !strings.Contains(out, "auth: iam") {
 		t.Fatalf("got %s", out)
 	}
 }

@@ -31,11 +31,11 @@ tables:
 
 Optional `prefix:` (default: Config name). Optional `kafka:` (`partitions`, `replicas`, `min.insync.replicas`; defaults 3/3/2). Unknown keys are rejected.
 
-Org/secops creates a Secrets Manager secret named after the Instance (`user`, `password`, optional `host`) before Apply. YAML has no secret fields. Attach (`instance.create: false`) uses that secret at runtime. Create (`instance.create: true`) uses the username; RDS manages the master password in Secrets Manager. Apply and Debezium fetch that RDS secret. Terraform state stores the secret ARN, not the password.
+Attach instances must have IAM database authentication on, `GRANT rds_iam` to the master user, and `rds.iam_auth_for_replication=1`. Create uses `MasterUserAuthenticationType=iam-db-auth` so the master user is IAM from birth. YAML has no secret fields. Apply creates owner and CDC roles with `rds_iam` and no passwords. Apps and Debezium connect with RDS IAM tokens. Apply never prints a password.
 
-The Debezium plugin ZIP must include the [MSK config-providers JAR](https://github.com/aws-samples/msk-config-providers/releases). `--msk-bootstrap-servers` must be the IAM listeners (port 9098). Org Connect role is Iceberg only: Warehouse S3/Glue, plugin S3, logs, MSK Connect internals (`__amazon_msk_connect_*`). No Secrets Manager. Apply attaches `kafka-cluster` on `{prefix}*` topics and groups to that role for the sink.
+The Debezium plugin ZIP must include the [AWS Advanced JDBC Wrapper](https://github.com/aws/aws-advanced-jdbc-wrapper) (Debezium 3.4+). `--msk-bootstrap-servers` must be the IAM listeners (port 9098). Org Connect role is Iceberg only: Warehouse S3/Glue, plugin S3, logs, MSK Connect internals (`__amazon_msk_connect_*`). No Secrets Manager. Apply attaches `kafka-cluster` on `{prefix}*` topics and groups to that role for the sink.
 
-Apply creates IAM role `relay-connect-{prefix}-cdc` for Debezium, under `--connect-source-boundary-arn`, and attaches `--connect-worker-policy-arn` (logs, plugin S3, Connect internals). That role gets `kafka-cluster` on `{prefix}*` and `secretsmanager:GetSecretValue`/`DescribeSecret` on this Config's runtime secret (Instance Secret on attach; RDS-managed master on create). Connect VPC needs a path to Secrets Manager. The Apply caller uses the default AWS credential chain for MSK IAM (topics), `secretsmanager:GetSecretValue`/`DescribeSecret`, `iam:CreateRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy` on the worker policy, `iam:PassRole` on the source role to `kafkaconnect.amazonaws.com`, and `iam:PutRolePolicy` on the org Connect role (kafka prefix only).
+Apply creates IAM role `relay-connect-{prefix}-cdc` for Debezium, under `--connect-source-boundary-arn`, and attaches `--connect-worker-policy-arn` (logs, plugin S3, Connect internals). That role gets `kafka-cluster` on `{prefix}*` and `rds-db:connect` on this CDC user. Connect VPC needs a path to RDS. The Apply caller uses the default AWS credential chain for MSK IAM (topics), `rds:DescribeDBInstances`, `rds:GenerateDBAuthToken`, `rds-db:connect` on the instance master user, `iam:CreateRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy` on the worker policy, `iam:PassRole` on the source role to `kafkaconnect.amazonaws.com`, and `iam:PutRolePolicy` on the org Connect role (kafka prefix only).
 
 Org also creates one Terraform state bucket per Cluster (versioning, encryption, Apply-caller IAM only). Not the Warehouse bucket. Apply stores state at `relay/<cluster>/<name>/terraform.tfstate`.
 
@@ -64,7 +64,7 @@ go run -C cmd/relay . apply -f example/example.yaml \
 
 When `instance.create` is true, also pass `--subnet-ids`, `--rds-sg-ids`. Optional: `--rds-instance-class` (default `db.t3.medium`), `--rds-engine-version` (default `16`). One-shot `--migrate-state` copies a leftover `.relay/<name>/terraform.tfstate` into the Cluster bucket when that key is empty.
 
-Prints `endpoint`, `database`, `user`, `secret`. Never the password.
+Prints `endpoint`, `database`, `user`, `auth: iam`. Never a password.
 
 ## Dev
 

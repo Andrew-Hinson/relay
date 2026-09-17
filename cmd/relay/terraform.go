@@ -149,14 +149,8 @@ func renderTfvars(plan applyPlan, env clusterEnv) string {
 	writeStr(&b, "instance_name", plan.Instance.Name)
 	writeBool(&b, "instance_create", plan.Instance.Create)
 	writeStr(&b, "database_name", plan.Database.Name)
-	writeStr(&b, "rds_username", plan.Connection.User)
-	writeStr(&b, "secret_name", plan.Connection.Secret)
-	key := plan.Connection.SecretUserKey
-	if key == "" {
-		key = "user"
-	}
-	writeStr(&b, "secret_user_key", key)
-	writeStr(&b, "master_secret_arn", plan.Connection.SecretARN)
+	writeStr(&b, "rds_username", plan.Instance.Username)
+	writeStr(&b, "cdc_user", plan.CDC.User)
 	writeStr(&b, "msk_bootstrap_servers", env.MSKBootstrap)
 	writeStr(&b, "msk_cluster_arn", env.MSKClusterARN)
 	writeStr(&b, "warehouse_bucket", env.WarehouseBucket)

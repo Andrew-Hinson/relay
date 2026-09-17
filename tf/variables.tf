@@ -98,19 +98,9 @@ variable "rds_username" {
   default = "relay"
 }
 
-variable "secret_name" {
+variable "cdc_user" {
   type    = string
-  default = "example"
-}
-
-variable "secret_user_key" {
-  type    = string
-  default = "user"
-}
-
-variable "master_secret_arn" {
-  type    = string
-  default = ""
+  default = "example_exampledb_cdc"
 }
 
 variable "partitions" {

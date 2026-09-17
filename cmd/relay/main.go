@@ -37,22 +37,23 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	creds, err := retrieveInstanceSecret(instanceName(spec), env.Region)
-	if err != nil {
-		return err
-	}
 	root := filepath.Dir(tfDir)
 	stateDir := configStateDir(root, spec.Name)
-	endpoint, err := resolveEndpoint(creds, instanceName(spec), env.Region, spec.Instance.Create)
-	if err != nil {
-		return err
-	}
-	login := instanceLogin{Host: endpoint, User: creds.User, Password: creds.Password}
+	inst := instanceName(spec)
 
+	var login instanceLogin
 	var live liveSnapshot
 	if spec.Instance.Create {
-		live = liveSnapshot{}
+		login = instanceLogin{Host: inst, User: defaultRDSUser}
 	} else {
+		info, err := describeDBInstance(inst, env.Region)
+		if err != nil {
+			return err
+		}
+		login, err = instanceLoginFromToken(info.Host, info.User, env.Region)
+		if err != nil {
+			return err
+		}
 		live, err = inspectLive(login, databaseName(spec))
 		if err != nil {
 			return err
@@ -62,15 +63,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	plan.Connection.User = creds.User
-	plan.Connection.Endpoint = endpoint
-	if !spec.Instance.Create {
-		arn, err := describeSecretARN(instanceName(spec), env.Region)
-		if err != nil {
-			return err
-		}
-		plan.Connection.SecretARN = arn
-	}
+	bindInstanceLogin(&login, &plan, login.Host, login.User)
 	tfvarsPath, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 	if err != nil {
 		return err
@@ -83,21 +76,15 @@ func run(args []string) error {
 		if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-var-file="+tfvarsPath, "-target=module.rds"); err != nil {
 			return err
 		}
+		endpoint := login.Host
 		if out, err := terraformOutput(tfDir, stateDir, "rds_endpoint"); err == nil && out != "" {
 			endpoint = out
 		}
-		arn, err := terraformOutput(tfDir, stateDir, "rds_master_secret_arn")
-		if err != nil {
-			return fmt.Errorf("rds master secret: %w", err)
-		}
-		if arn == "" {
-			return errors.New("rds master secret: empty")
-		}
-		master, err := retrieveInstanceSecret(arn, env.Region)
+		login, err = instanceLoginFromToken(endpoint, defaultRDSUser, env.Region)
 		if err != nil {
 			return err
 		}
-		bindMasterSecret(&login, &plan, master, endpoint, arn)
+		bindInstanceLogin(&login, &plan, endpoint, defaultRDSUser)
 		if _, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan)); err != nil {
 			return err
 		}
@@ -109,7 +96,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		bindMasterSecret(&login, &plan, master, endpoint, arn)
+		bindInstanceLogin(&login, &plan, endpoint, defaultRDSUser)
 		tfvarsPath, _, err = writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 		if err != nil {
 			return err

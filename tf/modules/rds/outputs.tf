@@ -1,7 +1,7 @@
 output "endpoint" {
-  value = aws_db_instance.this.address
+  value = awscc_rds_db_instance.this.endpoint.address
 }
 
-output "master_secret_arn" {
-  value = aws_db_instance.this.master_user_secret[0].secret_arn
+output "resource_id" {
+  value = awscc_rds_db_instance.this.dbi_resource_id
 }

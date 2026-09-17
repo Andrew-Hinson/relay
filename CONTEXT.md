@@ -39,8 +39,13 @@ A named relation this Config owns. Columns are DDL. A primary key is required. T
 **Prefix**:
 A Config override for resource names, defaulting to the Config name. Topics use `{prefix}.{schema}.{table}`.
 
-**Instance Secret**:
-The Secrets Manager store named after the Instance. Org creates it. Apply retrieves it on attach. On create, RDS manages the master secret; Apply and Debezium fetch that. Debezium reads it through this Config's Connect source role, not the Cluster Connect role. Not in Config. Not in Terraform state.
+**Owner role**:
+Postgres LOGIN role Apply creates for this Config (`{prefix}_{database}`). Owns the Database and Tables. Isolated to this Config's Database (`REVOKE CONNECT FROM PUBLIC`). Has `rds_iam`. The printed connection user. Apps connect with an RDS IAM token.
+_Avoid_: Config role, CDC as owner, owner secret, org-set password
+
+**CDC role**:
+Postgres LOGIN role Apply creates for this Config (`{prefix}_{database}_cdc`). Has `rds_iam`, `rds_replication`, and SELECT on this Config's Tables. Debezium uses it. Isolated to this Config's Database.
+_Avoid_: Config role, replication as owner, CDC secret, org-set password
 
 **Connect source role**:
-IAM role Apply creates for this Config's Debezium connector (`relay-connect-{prefix}-cdc`). Iceberg uses the Cluster Connect role. Only the source role may `GetSecretValue` on this Config's runtime secret.
+IAM role Apply creates for this Config's Debezium connector (`relay-connect-{prefix}-cdc`). Iceberg uses the Cluster Connect role. Only the source role may `rds-db:connect` as this CDC role.

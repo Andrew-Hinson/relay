@@ -5,6 +5,7 @@ locals {
   role_name = "relay-connect-${replace(var.prefix, ".", "-")}-cdc"
   topic_arn = "${replace(var.cluster_arn, ":cluster/", ":topic/")}/${var.prefix}*"
   group_arn = replace(var.cluster_arn, ":cluster/", ":group/")
+  db_user   = "arn:aws:rds-db:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:dbuser:${var.instance_resource_id}/${var.cdc_user}"
 }
 
 data "aws_iam_policy_document" "trust" {
@@ -66,19 +67,15 @@ resource "aws_iam_role_policy" "kafka" {
   policy = data.aws_iam_policy_document.kafka.json
 }
 
-data "aws_iam_policy_document" "secret" {
-  count = var.secret_arn == "" ? 0 : 1
-
+data "aws_iam_policy_document" "rds" {
   statement {
-    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [var.secret_arn]
+    actions   = ["rds-db:connect"]
+    resources = [local.db_user]
   }
 }
 
-resource "aws_iam_role_policy" "secret" {
-  count = var.secret_arn == "" ? 0 : 1
-
-  name   = "${replace(var.prefix, ".", "-")}-secret"
+resource "aws_iam_role_policy" "rds" {
+  name   = "${replace(var.prefix, ".", "-")}-rds"
   role   = aws_iam_role.this.id
-  policy = data.aws_iam_policy_document.secret[0].json
+  policy = data.aws_iam_policy_document.rds.json
 }

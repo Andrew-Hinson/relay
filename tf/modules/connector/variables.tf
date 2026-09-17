@@ -51,13 +51,8 @@ variable "publication_name" {
   type = string
 }
 
-variable "secret_name" {
+variable "cdc_user" {
   type = string
-}
-
-variable "secret_user_key" {
-  type    = string
-  default = "user"
 }
 
 variable "partitions" {
@@ -70,5 +65,5 @@ variable "replicas" {
 
 variable "kafkaconnect_version" {
   type    = string
-  default = "2.7.1"
+  default = "3.7.x"
 }

@@ -10,6 +10,15 @@ module "rds" {
   security_groups = var.rds_sg_ids
 }
 
+data "aws_db_instance" "attached" {
+  count                  = var.instance_create ? 0 : 1
+  db_instance_identifier = var.instance_name
+}
+
+locals {
+  instance_resource_id = var.instance_create ? module.rds[0].resource_id : data.aws_db_instance.attached[0].resource_id
+}
+
 module "topic" {
   for_each = { for t in var.tables : t.topic_name => t }
 
@@ -37,7 +46,8 @@ module "source_role" {
   prefix                   = var.connector_topic_prefix
   connector_name           = var.connector_name
   cluster_arn              = var.msk_cluster_arn
-  secret_arn               = var.master_secret_arn
+  cdc_user                 = var.cdc_user
+  instance_resource_id     = local.instance_resource_id
   permissions_boundary_arn = var.connect_source_boundary_arn
   worker_policy_arn        = var.connect_worker_policy_arn
 }
@@ -65,8 +75,7 @@ module "connector" {
   table_include_list = var.table_include_list
   topic_prefix       = var.connector_topic_prefix
   publication_name   = var.publication_name
-  secret_name        = var.secret_name
-  secret_user_key    = var.secret_user_key
+  cdc_user           = var.cdc_user
   partitions         = var.partitions
   replicas           = var.replicas
 
