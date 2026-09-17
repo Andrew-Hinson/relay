@@ -28,6 +28,29 @@ func parseDBInstance(raw []byte) (dbInstanceInfo, error) {
 	return info, nil
 }
 
+func liveForPlan(spec configFile, env clusterEnv) (liveSnapshot, bool, error) {
+	info, err := describeDBInstance(instanceName(spec), env.Region)
+	if err != nil {
+		if spec.Instance.Create && instanceNotFound(err) {
+			return liveSnapshot{}, false, nil
+		}
+		return liveSnapshot{}, false, err
+	}
+	login, err := instanceLoginFromToken(info.Host, info.User, env.Region)
+	if err != nil {
+		return liveSnapshot{}, false, err
+	}
+	live, err := inspectLive(login, databaseName(spec))
+	if err != nil {
+		return liveSnapshot{}, false, err
+	}
+	return live, true, nil
+}
+
+func instanceNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "DBInstanceNotFound")
+}
+
 func describeDBInstance(name, region string) (dbInstanceInfo, error) {
 	out, err := exec.Command("aws", describeDBInstanceArgs(name, region)...).Output()
 	if err != nil {

@@ -53,8 +53,14 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 	if err := fs.Parse(args); err != nil {
 		return "", clusterEnv{}, err
 	}
-	if *fileFlag == "" {
-		return "", clusterEnv{}, errors.New("usage: relay apply -f <config.yaml>")
+	file = *fileFlag
+	rest := fs.Args()
+	switch {
+	case file != "" && len(rest) == 0:
+	case file == "" && len(rest) == 1:
+		file = rest[0]
+	default:
+		return "", clusterEnv{}, errUsage
 	}
 	env = clusterEnv{
 		Region:                   *region,
@@ -76,7 +82,7 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 		StateBucket:              *stateBucket,
 		MigrateState:             *migrateState,
 	}
-	return *fileFlag, env, nil
+	return file, env, nil
 }
 
 func (e clusterEnv) validate(createInstance bool) error {

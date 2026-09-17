@@ -23,6 +23,19 @@ func validSpec() configFile {
 	}
 }
 
+func TestRun_usageIncludesPlan(t *testing.T) {
+	err := run(nil)
+	if err == nil || !strings.Contains(err.Error(), "plan") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_planRequiresFile(t *testing.T) {
+	if err := run([]string{"plan"}); err == nil {
+		t.Fatal("expected usage when config path is missing")
+	}
+}
+
 func TestPlanApply_prefixDefaultsToName(t *testing.T) {
 	plan, err := planApply(validSpec(), liveSnapshot{})
 	if err != nil {
@@ -352,6 +365,113 @@ func TestPlanApply_exampleYAML(t *testing.T) {
 	}
 	if plan.Instance.Name != "example" || !plan.Instance.Create {
 		t.Fatalf("got Instance %+v", plan.Instance)
+	}
+}
+
+func TestDiffPlan_createOnEmptyLive(t *testing.T) {
+	plan, err := planApply(validSpec(), liveSnapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := formatPlanDiff(diffPlan(plan, liveSnapshot{}, false))
+	want := "" +
+		"create\n" +
+		"  + instance acme\n" +
+		"  + database acmedb\n" +
+		"  + table public.orders\n" +
+		"  + topic acme.public.orders\n" +
+		"  + iceberg acme_public_orders\n" +
+		"  + publication acme_acmedb_cdc\n" +
+		"  + connector acme-acmedb-cdc\n" +
+		"  + sink acme-acmedb-iceberg\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestDiffPlan_noChangesWhenLiveMatches(t *testing.T) {
+	live := liveSnapshot{
+		Databases: []string{"acmedb"},
+		Tables: []liveTable{{
+			Database: "acmedb",
+			Schema:   "public",
+			Name:     "orders",
+			Columns:  []liveColumn{{Name: "id", Type: "serial", PrimaryKey: true}},
+		}},
+		Publications: []livePublication{{Name: "acme_acmedb_cdc", Tables: []string{"public.orders"}}},
+	}
+	plan, err := planApply(validSpec(), live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := formatPlanDiff(diffPlan(plan, live, true))
+	if got != "No changes.\n" {
+		t.Fatalf("got:\n%s", got)
+	}
+}
+
+func TestDiffPlan_teardownLiveTableMissingFromYAML(t *testing.T) {
+	live := liveSnapshot{
+		Databases: []string{"acmedb"},
+		Tables: []liveTable{
+			{
+				Database: "acmedb",
+				Schema:   "public",
+				Name:     "orders",
+				Columns:  []liveColumn{{Name: "id", Type: "serial", PrimaryKey: true}},
+			},
+			{
+				Database: "acmedb",
+				Schema:   "public",
+				Name:     "legacy",
+				Columns:  []liveColumn{{Name: "id", Type: "serial", PrimaryKey: true}},
+			},
+		},
+		Publications: []livePublication{{Name: "acme_acmedb_cdc", Tables: []string{"public.orders", "public.legacy"}}},
+	}
+	plan, err := planApply(validSpec(), live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := formatPlanDiff(diffPlan(plan, live, true))
+	want := "" +
+		"teardown\n" +
+		"  - table public.legacy\n" +
+		"  - topic acme.public.legacy\n" +
+		"  - iceberg acme_public_legacy\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestDiffPlan_createNewTableOnExisting(t *testing.T) {
+	spec := validSpec()
+	spec.Tables = append(spec.Tables, table{
+		Name:    "items",
+		Columns: []column{{Name: "id", Type: "serial", PrimaryKey: true}},
+	})
+	live := liveSnapshot{
+		Databases: []string{"acmedb"},
+		Tables: []liveTable{{
+			Database: "acmedb",
+			Schema:   "public",
+			Name:     "orders",
+			Columns:  []liveColumn{{Name: "id", Type: "serial", PrimaryKey: true}},
+		}},
+		Publications: []livePublication{{Name: "acme_acmedb_cdc", Tables: []string{"public.orders"}}},
+	}
+	plan, err := planApply(spec, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := formatPlanDiff(diffPlan(plan, live, true))
+	want := "" +
+		"create\n" +
+		"  + table public.items\n" +
+		"  + topic acme.public.items\n" +
+		"  + iceberg acme_public_items\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
 
