@@ -39,14 +39,13 @@ A named relation this Config owns. Columns are DDL. A primary key is required. T
 **Prefix**:
 A Config override for resource names, defaulting to the Config name. Topics use `{prefix}.{schema}.{table}`.
 
-**Instance Secret**:
-The Secrets Manager store named after the Instance. Org creates it. Apply retrieves it to bootstrap (CREATE DATABASE, CREATE ROLE, GRANT). On create, RDS manages the master password; Apply fetches that for bootstrap only. Not used by Debezium. Not in Config. Not in Terraform state.
+**Owner role**:
+Postgres LOGIN role Apply creates for this Config (`{prefix}_{database}`). Owns the Database and Tables. Isolated to this Config's Database (`REVOKE CONNECT FROM PUBLIC`). Has `rds_iam`. The printed connection user. Apps connect with an RDS IAM token.
+_Avoid_: Config role, CDC as owner, owner secret, org-set password
 
-**Config role**:
-Postgres LOGIN role Apply creates for this Config (`{prefix}_{database}_cdc`). Owns the Database and Tables. Has `rds_replication`. Apply runs Table DDL as this role. Debezium uses it. Isolated to this Config's Database (`REVOKE CONNECT FROM PUBLIC`).
-
-**Config role secret**:
-Secrets Manager secret Apply creates at `relay/{cluster}/{name}/cdc` (`username`, `password`). Debezium and the printed connection use it. The Connect source role may `GetSecretValue` on this secret only. Not in Config. Not in Terraform state.
+**CDC role**:
+Postgres LOGIN role Apply creates for this Config (`{prefix}_{database}_cdc`). Has `rds_iam`, `rds_replication`, and SELECT on this Config's Tables. Debezium uses it. Isolated to this Config's Database.
+_Avoid_: Config role, replication as owner, CDC secret, org-set password
 
 **Connect source role**:
-IAM role Apply creates for this Config's Debezium connector (`relay-connect-{prefix}-cdc`). Iceberg uses the Cluster Connect role. Only the source role may `GetSecretValue` on this Config role secret.
+IAM role Apply creates for this Config's Debezium connector (`relay-connect-{prefix}-cdc`). Iceberg uses the Cluster Connect role. Only the source role may `rds-db:connect` as this CDC role.

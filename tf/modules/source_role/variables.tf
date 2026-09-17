@@ -10,9 +10,12 @@ variable "cluster_arn" {
   type = string
 }
 
-variable "secret_arn" {
-  type    = string
-  default = ""
+variable "cdc_user" {
+  type = string
+}
+
+variable "instance_resource_id" {
+  type = string
 }
 
 variable "permissions_boundary_arn" {

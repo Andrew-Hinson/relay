@@ -3,8 +3,6 @@ resource "aws_mskconnect_worker_configuration" "this" {
   properties_file_content = <<-EOT
   key.converter=org.apache.kafka.connect.storage.StringConverter
   value.converter=org.apache.kafka.connect.storage.StringConverter
-  config.providers=secretsmanager
-  config.providers.secretsmanager.class=com.amazonaws.kafka.config.providers.SecretsManagerConfigProvider
   EOT
 }
 
@@ -24,15 +22,16 @@ resource "aws_mskconnect_connector" "this" {
     "tasks.max"                                 = "1"
     "database.hostname"                         = var.database_hostname
     "database.port"                             = "5432"
-    "database.user"                             = "$${secretsmanager:${var.secret_name}:${var.secret_user_key}}"
-    "database.password"                         = "$${secretsmanager:${var.secret_name}:password}"
+    "database.user"                             = var.cdc_user
     "database.dbname"                           = var.database_name
+    "database.sslmode"                          = "require"
+    "database.connection.factory.class"         = "io.debezium.connector.postgresql.connection.PostgresAwsIamConnectionFactory"
     "topic.prefix"                              = var.topic_prefix
     "table.include.list"                        = var.table_include_list
     "plugin.name"                               = "pgoutput"
     "slot.name"                                 = replace(var.name, "-", "_")
     "publication.name"                          = var.publication_name
-    "publication.autocreate.mode"               = "filtered"
+    "publication.autocreate.mode"               = "disabled"
     "key.converter"                             = "org.apache.kafka.connect.json.JsonConverter"
     "value.converter"                           = "org.apache.kafka.connect.json.JsonConverter"
     "key.converter.schemas.enable"              = "true"
@@ -40,7 +39,7 @@ resource "aws_mskconnect_connector" "this" {
     "topic.creation.enable"                     = "true"
     "topic.creation.default.partitions"         = tostring(var.partitions)
     "topic.creation.default.replication.factor" = tostring(var.replicas)
-    "config.action.reload"                      = "none"
+    "config.action.reload"                      = "restart"
   }
 
   kafka_cluster {
