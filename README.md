@@ -14,7 +14,7 @@ relay plan example/example.yaml
 relay apply example/example.yaml
 ```
 
-See [CONTEXT.md](CONTEXT.md) for terms.
+See [CONTEXT.md](CONTEXT.md) for terms. See [aws-account.md](aws-account.md) for Cluster IAM and account setup.
 
 ```mermaid
 flowchart TB
