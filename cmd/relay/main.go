@@ -118,8 +118,18 @@ func runApply(args []string) error {
 	}
 	tfEnv := terraformEnv(stateDir)
 	if spec.Instance.Create {
-		if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-var-file="+tfvarsPath, "-target=module.rds"); err != nil {
+		rdsPlan := filepath.Join(stateDir, "rds.tfplan")
+		changed, err := terraformPlan(tfDir, tfEnv, planArgs(tfvarsPath, rdsPlan, "module.rds")...)
+		if err != nil {
 			return err
+		}
+		if changed {
+			if err := confirmApply(os.Stdin, os.Stderr, env.Yes, stdinIsTerminal()); err != nil {
+				return err
+			}
+			if err := runTerraform(tfDir, tfEnv, applyPlanArgs(rdsPlan)...); err != nil {
+				return err
+			}
 		}
 		endpoint := login.Host
 		if out, err := terraformOutput(tfDir, stateDir, "rds_endpoint"); err == nil && out != "" {
@@ -147,16 +157,30 @@ func runApply(args []string) error {
 			return err
 		}
 	}
+	mainPlan := filepath.Join(stateDir, "apply.tfplan")
+	changed, err := terraformPlan(tfDir, tfEnv, planArgs(tfvarsPath, mainPlan)...)
+	if err != nil {
+		return err
+	}
+	var adopt []planLine
 	if env.Adopt {
-		for _, l := range adoptClaims(spec, live) {
-			fmt.Fprintf(os.Stderr, "adopting %s %s\n", l.Kind, l.Name)
+		adopt = adoptClaims(spec, live)
+	}
+	sql := renderApplySQL(plan)
+	fmt.Print(formatReview(adopt, sql))
+	if changed || sql != "" || len(adopt) > 0 {
+		if err := confirmApply(os.Stdin, os.Stderr, env.Yes, stdinIsTerminal()); err != nil {
+			return err
 		}
 	}
+	// Roles, grants, and stamps are idempotent and re-run every Apply.
 	if err := applySQL(login, plan); err != nil {
 		return err
 	}
-	if err := runTerraform(tfDir, tfEnv, "apply", "-auto-approve", "-var-file="+tfvarsPath); err != nil {
-		return err
+	if changed {
+		if err := runTerraform(tfDir, tfEnv, applyPlanArgs(mainPlan)...); err != nil {
+			return err
+		}
 	}
 	fmt.Print(formatConnection(plan.Connection))
 	return nil

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -237,6 +238,35 @@ func writeList(b *strings.Builder, key string, vs []string) {
 		b.WriteString(strconv.Quote(v))
 	}
 	b.WriteString("]\n")
+}
+
+// planArgs saves the plan so Apply executes exactly what was reviewed.
+// -detailed-exitcode exits 2 when the plan has changes.
+func planArgs(tfvarsPath, planPath string, targets ...string) []string {
+	args := []string{"plan", "-input=false", "-detailed-exitcode", "-var-file=" + tfvarsPath, "-out=" + planPath}
+	for _, t := range targets {
+		args = append(args, "-target="+t)
+	}
+	return args
+}
+
+// applyPlanArgs applies a saved plan; Terraform does not prompt for saved plans.
+func applyPlanArgs(planPath string) []string {
+	return []string{"apply", "-input=false", planPath}
+}
+
+// terraformPlan runs plan and reports whether the saved plan has changes.
+func terraformPlan(dir string, extraEnv []string, args ...string) (bool, error) {
+	err := runTerraform(dir, extraEnv, args...)
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return false, nil
+	case errors.As(err, &ee) && ee.ExitCode() == 2:
+		return true, nil
+	default:
+		return false, err
+	}
 }
 
 func runTerraform(dir string, extraEnv []string, args ...string) error {

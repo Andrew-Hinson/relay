@@ -14,6 +14,10 @@ relay plan example/example.yaml
 relay apply example/example.yaml
 ```
 
+Apply shows the Terraform plan and the SQL it will run, then asks for `yes` before changing anything. It applies exactly the reviewed plan. In CI, pass `--yes`; without a terminal Apply refuses. Creating an Instance asks twice: once for the Instance, then for the rest.
+
+Kafka topics and Glue Iceberg tables have `prevent_destroy`. Removing a Table from a Config fails at plan until you drop it deliberately (`terraform state rm` of its topic and Glue table).
+
 Apply stamps the Database and its owner/CDC roles with `COMMENT ... IS 'relay:{cluster}/{config}'` and refuses objects stamped by another Config. Configs applied before stamping existed: run `relay apply --adopt <config.yaml>` once. `relay plan --adopt` lists what will be claimed. Adopt only claims objects when the Database is already owned by this Config's owner role.
 
 Postgres connections verify the Instance certificate (`sslmode=verify-full`) against the embedded [RDS CA bundle](cmd/relay/rds-global-bundle.pem).

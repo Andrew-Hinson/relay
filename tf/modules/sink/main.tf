@@ -36,6 +36,11 @@ resource "aws_glue_catalog_table" "iceberg" {
       metadata_operation = "CREATE"
     }
   }
+
+  # Dropping the Glue table orphans the Iceberg data BI reads.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_mskconnect_connector" "this" {

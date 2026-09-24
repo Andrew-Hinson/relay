@@ -28,6 +28,7 @@ type clusterEnv struct {
 	StateBucket              string
 	MigrateState             bool
 	Adopt                    bool
+	Yes                      bool
 }
 
 func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
@@ -52,6 +53,7 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 	engine := fs.String("rds-engine-version", envOr("RELAY_RDS_ENGINE_VERSION", "16"), "RDS engine version")
 	stateBucket := fs.String("state-bucket", envOr("RELAY_STATE_BUCKET", ""), "Cluster Terraform state bucket")
 	migrateState := fs.Bool("migrate-state", false, "one-shot copy of local terraform.tfstate to the Cluster state bucket")
+	yes := fs.Bool("yes", false, "apply without the confirmation prompt")
 	adopt := fs.Bool("adopt", false, "one-shot claim of unstamped Postgres roles/database created before ownership stamps")
 	if err := fs.Parse(args); err != nil {
 		return "", clusterEnv{}, err
@@ -85,6 +87,7 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 		StateBucket:              *stateBucket,
 		MigrateState:             *migrateState,
 		Adopt:                    *adopt,
+		Yes:                      *yes,
 	}
 	return file, env, nil
 }

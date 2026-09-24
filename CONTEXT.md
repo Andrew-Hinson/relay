@@ -9,7 +9,7 @@ The YAML a service team commits. Input to Apply. Identifiers are `[a-z][a-z0-9_]
 _Avoid_: Project, manifest, Relay file
 
 **Apply**:
-Reconciliation of a Config. v1 has no destroy.
+Reconciliation of a Config. Shows the plan and asks before changing anything (`--yes` skips). v1 has no destroy: topics and Iceberg tables refuse deletion.
 
 **Plan**:
 Dry-run of Apply. Prints create vs teardown from Config vs live. Teardown is Config membership (Table, topic, Iceberg table). Apply does not DROP Postgres.
