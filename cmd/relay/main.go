@@ -46,6 +46,9 @@ func loadConfig(args []string) (configFile, clusterEnv, error) {
 	if err := env.validate(spec.Instance.Create); err != nil {
 		return configFile{}, clusterEnv{}, err
 	}
+	if err := env.checkCluster(spec.Cluster); err != nil {
+		return configFile{}, clusterEnv{}, err
+	}
 	return spec, env, nil
 }
 
@@ -92,7 +95,7 @@ func runApply(args []string) error {
 		if err != nil {
 			return err
 		}
-		live, err = inspectLive(login, databaseName(spec))
+		live, err = inspectOwned(login, spec, env.Adopt)
 		if err != nil {
 			return err
 		}
@@ -126,7 +129,7 @@ func runApply(args []string) error {
 		if _, _, err := writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan)); err != nil {
 			return err
 		}
-		live, err = inspectLive(login, databaseName(spec))
+		live, err = inspectOwned(login, spec, env.Adopt)
 		if err != nil {
 			return err
 		}
@@ -148,6 +151,19 @@ func runApply(args []string) error {
 	}
 	fmt.Print(formatConnection(plan.Connection))
 	return nil
+}
+
+// inspectOwned reads live state and refuses objects another Config owns.
+func inspectOwned(login instanceLogin, spec configFile, adopt bool) (liveSnapshot, error) {
+	owner, cdc := configRoles(spec)
+	live, err := inspectLive(login, databaseName(spec), []string{owner, cdc})
+	if err != nil {
+		return liveSnapshot{}, err
+	}
+	if err := checkOwnership(spec, live, adopt); err != nil {
+		return liveSnapshot{}, err
+	}
+	return live, nil
 }
 
 func readYAML(path string) ([]byte, error) {

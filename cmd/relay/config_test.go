@@ -358,3 +358,18 @@ func TestParseConfig_rejectsDatabasesList(t *testing.T) {
 		t.Fatal("expected error when databases list is source")
 	}
 }
+
+func TestParseConfig_rejectsCDCSuffix(t *testing.T) {
+	for _, extra := range []string{"prefix: acme_cdc\n", "database:\n  name: orders_cdc\n"} {
+		if _, err := parseConfig([]byte(validYAML() + extra)); err == nil || !strings.Contains(err.Error(), "_cdc") {
+			t.Fatalf("%q: got %v", extra, err)
+		}
+	}
+}
+
+func TestParseConfig_rejectsInvalidCluster(t *testing.T) {
+	raw := strings.Replace(validYAML(), "cluster: prod", "cluster: \"prod'; --\"", 1)
+	if _, err := parseConfig([]byte(raw)); err == nil {
+		t.Fatal("expected invalid cluster error")
+	}
+}

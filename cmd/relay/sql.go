@@ -15,31 +15,51 @@ type instanceLogin struct {
 	Password string
 }
 
-func inspectLive(login instanceLogin, database string) (liveSnapshot, error) {
+func inspectLive(login instanceLogin, database string, roles []string) (liveSnapshot, error) {
 	ctx := context.Background()
 	conn, err := pgx.Connect(ctx, postgresURL(login, "postgres"))
 	if err != nil {
 		return liveSnapshot{}, err
 	}
 	defer conn.Close(ctx)
-	rows, err := conn.Query(ctx, `SELECT datname FROM pg_database WHERE datistemplate = false`)
+	live := liveSnapshot{DatabaseStamps: map[string]string{}, RoleStamps: map[string]string{}}
+	rows, err := conn.Query(ctx, `
+SELECT datname, COALESCE(shobj_description(oid, 'pg_database'), '')
+FROM pg_database WHERE datistemplate = false`)
 	if err != nil {
 		return liveSnapshot{}, err
 	}
-	defer rows.Close()
-	var live liveSnapshot
-	var dbs []string
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var name, stamp string
+		if err := rows.Scan(&name, &stamp); err != nil {
+			rows.Close()
 			return liveSnapshot{}, err
 		}
-		dbs = append(dbs, name)
+		live.Databases = append(live.Databases, name)
+		live.DatabaseStamps[name] = stamp
 	}
+	rows.Close()
 	if err := rows.Err(); err != nil {
 		return liveSnapshot{}, err
 	}
-	live.Databases = dbs
+	rows, err = conn.Query(ctx, `
+SELECT rolname, COALESCE(shobj_description(oid, 'pg_authid'), '')
+FROM pg_roles WHERE rolname = ANY($1)`, roles)
+	if err != nil {
+		return liveSnapshot{}, err
+	}
+	for rows.Next() {
+		var name, stamp string
+		if err := rows.Scan(&name, &stamp); err != nil {
+			rows.Close()
+			return liveSnapshot{}, err
+		}
+		live.RoleStamps[name] = stamp
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return liveSnapshot{}, err
+	}
 	if !liveHasDatabase(live, database) {
 		return live, nil
 	}
@@ -204,6 +224,11 @@ func applySQL(master instanceLogin, plan applyPlan) error {
 	if err := ensureRole(ctx, master, cdc); err != nil {
 		return err
 	}
+	for _, role := range []string{owner, cdc} {
+		if err := execSQL(ctx, master, "postgres", commentOnRoleSQL(role, plan.Stamp)); err != nil {
+			return err
+		}
+	}
 	if err := execSQL(ctx, master, "postgres", grantReplicationSQL(cdc)); err != nil {
 		return err
 	}
@@ -218,7 +243,7 @@ func applySQL(master instanceLogin, plan applyPlan) error {
 			return err
 		}
 	}
-	if err := grantDatabase(ctx, master, owner, cdc, plan.Database.Name); err != nil {
+	if err := grantDatabase(ctx, master, owner, cdc, plan.Database.Name, plan.Stamp); err != nil {
 		return err
 	}
 	if err := grantSchemas(ctx, master, owner, cdc, plan); err != nil {
@@ -270,7 +295,7 @@ func ensureRole(ctx context.Context, master instanceLogin, name string) error {
 	return err
 }
 
-func grantDatabase(ctx context.Context, master instanceLogin, owner, cdc, database string) error {
+func grantDatabase(ctx context.Context, master instanceLogin, owner, cdc, database, stamp string) error {
 	conn, err := pgx.Connect(ctx, postgresURL(master, "postgres"))
 	if err != nil {
 		return err
@@ -282,6 +307,7 @@ func grantDatabase(ctx context.Context, master instanceLogin, owner, cdc, databa
 		revokeCreateDatabaseSQL(cdc, database),
 		revokePublicConnectSQL(database),
 		alterDatabaseOwnerSQL(database, owner),
+		commentOnDatabaseSQL(database, stamp),
 	} {
 		if _, err := conn.Exec(ctx, sql); err != nil {
 			return err
@@ -391,6 +417,18 @@ func alterPublicationAddSQL(name, schema, table string) string {
 
 func alterPublicationOwnerSQL(name, role string) string {
 	return "ALTER PUBLICATION " + name + " OWNER TO " + role
+}
+
+func commentOnRoleSQL(role, stamp string) string {
+	return "COMMENT ON ROLE " + role + " IS " + quoteLiteral(stamp)
+}
+
+func commentOnDatabaseSQL(database, stamp string) string {
+	return "COMMENT ON DATABASE " + database + " IS " + quoteLiteral(stamp)
+}
+
+func quoteLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 func grantRDSIAMSQL(role string) string {

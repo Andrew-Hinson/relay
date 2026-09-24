@@ -124,3 +124,15 @@ func TestRoleNames_ownerAndCDC(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestStampSQL(t *testing.T) {
+	if got := commentOnRoleSQL("acme_acmedb", "relay:prod/acme"); got != "COMMENT ON ROLE acme_acmedb IS 'relay:prod/acme'" {
+		t.Fatalf("got %q", got)
+	}
+	if got := commentOnDatabaseSQL("acmedb", "relay:prod/acme"); got != "COMMENT ON DATABASE acmedb IS 'relay:prod/acme'" {
+		t.Fatalf("got %q", got)
+	}
+	if got := quoteLiteral("a'b"); got != "'a''b'" {
+		t.Fatalf("got %q", got)
+	}
+}

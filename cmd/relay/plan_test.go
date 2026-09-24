@@ -493,3 +493,52 @@ func TestFormatConnection_omitsPassword(t *testing.T) {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+func TestCheckOwnership(t *testing.T) {
+	spec := validSpec()
+	mine := ownershipStamp(spec)
+	if mine != "relay:prod/acme" {
+		t.Fatalf("got stamp %q", mine)
+	}
+	cases := []struct {
+		name  string
+		live  liveSnapshot
+		adopt bool
+		want  string
+	}{
+		{"fresh instance", liveSnapshot{}, false, ""},
+		{"own objects", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": mine},
+			RoleStamps:     map[string]string{"acme_acmedb": mine, "acme_acmedb_cdc": mine},
+		}, false, ""},
+		{"database of another Config", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": "relay:prod/other"},
+		}, true, "belongs to relay:prod/other"},
+		{"role of another Config", liveSnapshot{
+			RoleStamps: map[string]string{"acme_acmedb_cdc": "relay:prod/other"},
+		}, true, "belongs to relay:prod/other"},
+		{"unstamped role refused", liveSnapshot{
+			RoleStamps: map[string]string{"acme_acmedb": ""},
+		}, false, "--adopt"},
+		{"unstamped database refused", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": ""},
+		}, false, "--adopt"},
+		{"unstamped adopted", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": ""},
+			RoleStamps:     map[string]string{"acme_acmedb": ""},
+		}, true, ""},
+	}
+	for _, c := range cases {
+		err := checkOwnership(spec, c.live, c.adopt)
+		if c.want == "" && err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Fatalf("%s: got %v, want %q", c.name, err, c.want)
+		}
+	}
+}

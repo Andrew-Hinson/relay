@@ -126,7 +126,7 @@ Attach `relay-connect-worker`. Add warehouse (not on the worker policy, or sourc
 
 If Lake Formation governs that Glue database, also `lakeformation:GetDataAccess` and LF insert/alter on the tables. IAM-only is enough when LF is not enforcing.
 
-Apply then adds, per Config prefix, the same Kafka data-plane as the source role: cluster Connect/Describe/WriteDataIdempotently; topic Create/Describe/Read/Write on `{prefix}*`; group Alter/Describe on `{prefix}*` and `connect-{prefix}*`. That covers `{prefix}.{schema}.{table}` and `{prefix}.control.iceberg`.
+Apply then adds, per Config prefix, the same Kafka data-plane as the source role: cluster Connect/Describe/WriteDataIdempotently; topic Create/Describe/Read/Write on `{prefix}.*`; group Alter/Describe on `{prefix}-*` and `connect-{prefix}-*`. That covers `{prefix}.{schema}.{table}` and `{prefix}.control.iceberg`. Wildcards are anchored on `.` / `-` so prefix `ex` never matches `example`.
 
 ## Worker policy (`relay-connect-worker`)
 
@@ -207,7 +207,7 @@ Name `relay-connect-{prefix}-cdc` (`.` in prefix becomes `-`). Example Config `e
 - Trust: `kafkaconnect.amazonaws.com`, `aws:SourceAccount=ACCOUNT`, `aws:SourceArn=arn:aws:kafkaconnect:REGION:ACCOUNT:connector/{prefix}-{database}-cdc/*`
 - `permissions_boundary` = `relay-connect-source-boundary`
 - Attach `relay-connect-worker`
-- Inline `{prefix}-topics`: Kafka on `{prefix}*` topics and `{prefix}*` / `connect-{prefix}*` groups
+- Inline `{prefix}-topics`: Kafka on `{prefix}.*` topics and `{prefix}-*` / `connect-{prefix}-*` groups
 - Inline `{prefix}-rds`: `rds-db:connect` on `arn:aws:rds-db:REGION:ACCOUNT:dbuser:{instance-resource-id}/{prefix}_{database}_cdc`
 
 Only this role may connect as the CDC Postgres role.

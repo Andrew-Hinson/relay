@@ -14,6 +14,10 @@ relay plan example/example.yaml
 relay apply example/example.yaml
 ```
 
+Apply stamps the Database and its owner/CDC roles with `COMMENT ... IS 'relay:{cluster}/{config}'` and refuses objects stamped by another Config. Configs applied before stamping existed: run `relay apply --adopt <config.yaml>` once.
+
+The Config's `cluster` must match the cluster name in `RELAY_MSK_CLUSTER_ARN`.
+
 See [CONTEXT.md](CONTEXT.md) for terms. See [aws-account.md](aws-account.md) for Cluster IAM and account setup.
 
 ```mermaid
