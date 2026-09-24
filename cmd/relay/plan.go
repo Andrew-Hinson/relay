@@ -12,6 +12,8 @@ type liveSnapshot struct {
 	// Relay ownership stamps on existing objects, "" when unstamped.
 	DatabaseStamps map[string]string
 	RoleStamps     map[string]string
+	// Postgres owner role of each database.
+	DatabaseOwners map[string]string
 }
 
 type livePublication struct {
@@ -228,10 +230,13 @@ func ownershipStamp(spec configFile) string {
 }
 
 // checkOwnership refuses existing roles or databases stamped by another Config.
-// Unstamped objects predate stamping and are claimed only with adopt.
+// Unstamped objects predate stamping and are claimed only with adopt, and only when
+// the Database is owned by this Config's owner role, which pre-stamp Apply always set.
 func checkOwnership(spec configFile, live liveSnapshot, adopt bool) error {
 	want := ownershipStamp(spec)
 	owner, cdc := configRoles(spec)
+	db := databaseName(spec)
+	adoptable := adopt && liveHasDatabase(live, db) && live.DatabaseOwners[db] == owner
 	check := func(kind, name string, stamps map[string]string, exists bool) error {
 		if !exists {
 			return nil
@@ -240,15 +245,16 @@ func checkOwnership(spec configFile, live liveSnapshot, adopt bool) error {
 		switch {
 		case got == want:
 			return nil
-		case got == "" && adopt:
+		case got == "" && adoptable:
 			return nil
+		case got == "" && adopt:
+			return fmt.Errorf("%s %s is unstamped and database %s is not owned by %s; refusing to adopt objects this Config did not create", kind, name, db, owner)
 		case got == "":
 			return fmt.Errorf("%s %s exists without a Relay stamp; pass --adopt once if this Config created it", kind, name)
 		default:
 			return fmt.Errorf("%s %s belongs to %s, not %s", kind, name, got, want)
 		}
 	}
-	db := databaseName(spec)
 	if err := check("database", db, live.DatabaseStamps, liveHasDatabase(live, db)); err != nil {
 		return err
 	}
@@ -259,6 +265,22 @@ func checkOwnership(spec configFile, live liveSnapshot, adopt bool) error {
 		}
 	}
 	return nil
+}
+
+// adoptClaims lists the unstamped objects --adopt will stamp for this Config.
+func adoptClaims(spec configFile, live liveSnapshot) []planLine {
+	var out []planLine
+	db := databaseName(spec)
+	if liveHasDatabase(live, db) && live.DatabaseStamps[db] == "" {
+		out = append(out, planLine{"database", db})
+	}
+	owner, cdc := configRoles(spec)
+	for _, role := range []string{owner, cdc} {
+		if stamp, ok := live.RoleStamps[role]; ok && stamp == "" {
+			out = append(out, planLine{"role", role})
+		}
+	}
+	return out
 }
 
 func planPublication(live liveSnapshot, plan *applyPlan) {
@@ -450,6 +472,7 @@ type planLine struct {
 type planDiff struct {
 	Create   []planLine
 	Teardown []planLine
+	Adopt    []planLine
 }
 
 func diffPlan(plan applyPlan, live liveSnapshot, instancePresent bool) planDiff {
@@ -498,11 +521,24 @@ func diffPlan(plan applyPlan, live liveSnapshot, instancePresent bool) planDiff 
 }
 
 func formatPlanDiff(d planDiff) string {
-	if len(d.Create) == 0 && len(d.Teardown) == 0 {
+	if len(d.Create) == 0 && len(d.Teardown) == 0 && len(d.Adopt) == 0 {
 		return "No changes.\n"
 	}
 	var b strings.Builder
+	if len(d.Adopt) > 0 {
+		b.WriteString("adopt\n")
+		for _, l := range d.Adopt {
+			b.WriteString("  ~ ")
+			b.WriteString(l.Kind)
+			b.WriteByte(' ')
+			b.WriteString(l.Name)
+			b.WriteByte('\n')
+		}
+	}
 	if len(d.Create) > 0 {
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
 		b.WriteString("create\n")
 		for _, l := range d.Create {
 			b.WriteString("  + ")

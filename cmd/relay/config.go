@@ -84,6 +84,9 @@ func parseConfig(raw []byte) (configFile, error) {
 	if strings.HasSuffix(spec.Prefix, cdcSuffix) || strings.HasSuffix(spec.Database.Name, cdcSuffix) {
 		return spec, fmt.Errorf("prefix and database must not end in %q", cdcSuffix)
 	}
+	if err := checkReservedNames(spec); err != nil {
+		return spec, err
+	}
 	if !spec.Instance.Create && spec.Instance.Name == "" {
 		return spec, errors.New("attach instance requires name")
 	}
@@ -112,6 +115,9 @@ func parseConfig(raw []byte) (configFile, error) {
 		}
 		if tbl.Schema != "" && !sqlIdent(tbl.Schema) {
 			return spec, fmt.Errorf("schema %q is not a valid identifier", tbl.Schema)
+		}
+		if reservedSchema(tbl.Schema) {
+			return spec, fmt.Errorf("schema %q is reserved", tbl.Schema)
 		}
 		hasPK := false
 		for _, col := range tbl.Columns {
@@ -150,6 +156,31 @@ func databaseName(spec configFile) string {
 		return spec.Database.Name
 	}
 	return spec.Name + "db"
+}
+
+// checkReservedNames keeps a Config off Postgres and RDS system databases and roles,
+// so claiming them never depends on the stamp check or a Postgres permission error.
+func checkReservedNames(spec configFile) error {
+	db := databaseName(spec)
+	if reservedDatabases[db] || strings.HasPrefix(db, "template") {
+		return fmt.Errorf("database %q is reserved", db)
+	}
+	owner, cdc := configRoles(spec)
+	for _, role := range []string{owner, cdc} {
+		if strings.HasPrefix(role, "pg_") || strings.HasPrefix(role, "rds") {
+			return fmt.Errorf("role %q is reserved (pg_ and rds prefixes belong to Postgres and RDS)", role)
+		}
+	}
+	return nil
+}
+
+func reservedSchema(s string) bool {
+	return s == "information_schema" || strings.HasPrefix(s, "pg_")
+}
+
+var reservedDatabases = map[string]bool{
+	"postgres": true,
+	"rdsadmin": true,
 }
 
 func sqlIdent(s string) bool {

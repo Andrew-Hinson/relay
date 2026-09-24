@@ -373,3 +373,24 @@ func TestParseConfig_rejectsInvalidCluster(t *testing.T) {
 		t.Fatal("expected invalid cluster error")
 	}
 }
+
+func TestParseConfig_rejectsReservedNames(t *testing.T) {
+	cases := map[string]string{
+		"postgres database":  "database:\n  name: postgres\n",
+		"rdsadmin database":  "database:\n  name: rdsadmin\n",
+		"template database":  "database:\n  name: template1\n",
+		"rds_superuser role": "prefix: rds\ndatabase:\n  name: superuser\n",
+		"pg_ role":           "prefix: pg\n",
+	}
+	for name, extra := range cases {
+		if _, err := parseConfig([]byte(validYAML() + extra)); err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Fatalf("%s: got %v", name, err)
+		}
+	}
+	for _, schema := range []string{"pg_catalog", "information_schema"} {
+		raw := strings.Replace(validYAML(), "  - name: orders\n", "  - name: orders\n    schema: "+schema+"\n", 1)
+		if _, err := parseConfig([]byte(raw)); err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Fatalf("schema %s: got %v", schema, err)
+		}
+	}
+}

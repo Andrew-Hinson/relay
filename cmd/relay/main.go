@@ -65,7 +65,11 @@ func runPlan(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Print(formatPlanDiff(diffPlan(plan, live, instancePresent)))
+	diff := diffPlan(plan, live, instancePresent)
+	if env.Adopt {
+		diff.Adopt = adoptClaims(spec, live)
+	}
+	fmt.Print(formatPlanDiff(diff))
 	return nil
 }
 
@@ -141,6 +145,11 @@ func runApply(args []string) error {
 		tfvarsPath, _, err = writeApplyFiles(stateDir, renderTfvars(plan, env), renderApplySQL(plan))
 		if err != nil {
 			return err
+		}
+	}
+	if env.Adopt {
+		for _, l := range adoptClaims(spec, live) {
+			fmt.Fprintf(os.Stderr, "adopting %s %s\n", l.Kind, l.Name)
 		}
 	}
 	if err := applySQL(login, plan); err != nil {

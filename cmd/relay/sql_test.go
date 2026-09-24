@@ -1,8 +1,22 @@
 package main
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"io"
+	"math/big"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func TestGrantSQL_scopesOwnerAndCDC(t *testing.T) {
@@ -79,8 +93,27 @@ func TestPublicationSQL_listsYAMLTables(t *testing.T) {
 
 func TestPostgresURL_requiresSSL(t *testing.T) {
 	got := postgresURL(instanceLogin{Host: "db.example", User: "relay", Password: "token"}, "postgres")
-	if !strings.Contains(got, "sslmode=require") {
+	if !strings.Contains(got, "sslmode=verify-full") {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestPostgresConfig_verifiesRDSCertificate(t *testing.T) {
+	cfg, err := postgresConfig(instanceLogin{Host: "db.example.us-east-1.rds.amazonaws.com", User: "relay", Password: "token"}, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TLSConfig == nil || cfg.TLSConfig.InsecureSkipVerify {
+		t.Fatalf("TLS verification off: %+v", cfg.TLSConfig)
+	}
+	if cfg.TLSConfig.ServerName != "db.example.us-east-1.rds.amazonaws.com" {
+		t.Fatalf("got ServerName %q", cfg.TLSConfig.ServerName)
+	}
+	if cfg.TLSConfig.RootCAs == nil {
+		t.Fatal("RDS CA bundle not pinned")
+	}
+	if len(cfg.Fallbacks) != 0 {
+		t.Fatalf("got %d fallbacks; verify-full must not fall back", len(cfg.Fallbacks))
 	}
 }
 
@@ -134,5 +167,67 @@ func TestStampSQL(t *testing.T) {
 	}
 	if got := quoteLiteral("a'b"); got != "'a''b'" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// A server presenting a certificate outside the RDS bundle must be refused before
+// the IAM token is sent.
+func TestConnectPostgres_refusesUntrustedCertificate(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		DNSNames:     []string{"localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	gotToken := make(chan bool, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		sslRequest := make([]byte, 8)
+		if _, err := io.ReadFull(conn, sslRequest); err != nil {
+			return
+		}
+		conn.Write([]byte{'S'})
+		srv := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}})
+		if err := srv.Handshake(); err != nil {
+			gotToken <- false
+			return
+		}
+		buf := make([]byte, 1)
+		_, err = srv.Read(buf)
+		gotToken <- err == nil
+	}()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	cfg, err := postgresConfig(instanceLogin{Host: "localhost", User: "relay", Password: "token"}, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := strconv.Atoi(port)
+	cfg.Port = uint16(p)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = pgx.ConnectConfig(ctx, cfg)
+	if err == nil || !strings.Contains(err.Error(), "certificate") {
+		t.Fatalf("got %v, want certificate verification error", err)
+	}
+	if <-gotToken {
+		t.Fatal("client sent data after handshake with untrusted certificate")
 	}
 }

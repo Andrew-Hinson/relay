@@ -18,6 +18,8 @@ skills-lock.json
 .env.*
 !.env.example
 *.pem
+# public AWS RDS CA bundle, embedded by relay for verify-full
+!cmd/relay/rds-global-bundle.pem
 *.key
 credentials.json
 kubeconfig

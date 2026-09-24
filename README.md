@@ -14,7 +14,9 @@ relay plan example/example.yaml
 relay apply example/example.yaml
 ```
 
-Apply stamps the Database and its owner/CDC roles with `COMMENT ... IS 'relay:{cluster}/{config}'` and refuses objects stamped by another Config. Configs applied before stamping existed: run `relay apply --adopt <config.yaml>` once.
+Apply stamps the Database and its owner/CDC roles with `COMMENT ... IS 'relay:{cluster}/{config}'` and refuses objects stamped by another Config. Configs applied before stamping existed: run `relay apply --adopt <config.yaml>` once. `relay plan --adopt` lists what will be claimed. Adopt only claims objects when the Database is already owned by this Config's owner role.
+
+Postgres connections verify the Instance certificate (`sslmode=verify-full`) against the embedded [RDS CA bundle](cmd/relay/rds-global-bundle.pem).
 
 The Config's `cluster` must match the cluster name in `RELAY_MSK_CLUSTER_ARN`.
 
