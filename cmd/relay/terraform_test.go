@@ -425,3 +425,64 @@ func TestParseApplyFlags_adopt(t *testing.T) {
 		t.Fatal("expected Adopt")
 	}
 }
+
+func TestParseApplyFlags_yes(t *testing.T) {
+	_, env, err := parseApplyFlags([]string{"-f", "x.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Yes {
+		t.Fatal("--yes must default false")
+	}
+	_, env, err = parseApplyFlags([]string{"--yes", "x.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.Yes {
+		t.Fatal("expected --yes")
+	}
+}
+
+func TestPlanArgs_savesPlanForReview(t *testing.T) {
+	got := strings.Join(planArgs("/s/terraform.tfvars", "/s/apply.tfplan"), " ")
+	want := "plan -input=false -detailed-exitcode -var-file=/s/terraform.tfvars -out=/s/apply.tfplan"
+	if got != want {
+		t.Fatalf("got %q", got)
+	}
+	got = strings.Join(planArgs("/s/terraform.tfvars", "/s/rds.tfplan", "module.rds"), " ")
+	if !strings.HasSuffix(got, " -target=module.rds") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestApplyPlanArgs_appliesSavedPlanOnly(t *testing.T) {
+	got := applyPlanArgs("/s/apply.tfplan")
+	if strings.Join(got, " ") != "apply -input=false /s/apply.tfplan" {
+		t.Fatalf("got %q", got)
+	}
+	for _, a := range got {
+		if a == "-auto-approve" || strings.HasPrefix(a, "-var-file") {
+			t.Fatalf("apply must use the reviewed plan, got %q", got)
+		}
+	}
+}
+
+func TestTerraformPlan_detailedExitCode(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\nexit $FAKE_TF_EXIT\n"
+	if err := os.WriteFile(filepath.Join(bin, "terraform"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, c := range []struct {
+		exit    string
+		changed bool
+		err     bool
+	}{{"0", false, false}, {"2", true, false}, {"1", false, true}} {
+		t.Setenv("FAKE_TF_EXIT", c.exit)
+		changed, err := terraformPlan(t.TempDir(), nil, "plan")
+		if changed != c.changed || (err != nil) != c.err {
+			t.Fatalf("exit %s: got changed=%v err=%v", c.exit, changed, err)
+		}
+	}
+}
