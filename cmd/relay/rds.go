@@ -40,7 +40,7 @@ func liveForPlan(spec configFile, env clusterEnv) (liveSnapshot, bool, error) {
 	if err != nil {
 		return liveSnapshot{}, false, err
 	}
-	live, err := inspectLive(login, databaseName(spec))
+	live, err := inspectOwned(login, spec, env.Adopt)
 	if err != nil {
 		return liveSnapshot{}, false, err
 	}
@@ -64,11 +64,11 @@ func describeDBInstance(name, region string) (dbInstanceInfo, error) {
 }
 
 func generateDBAuthToken(host, user, region string) (string, error) {
-	out, err := exec.Command("aws", generateDBAuthTokenArgs(host, user, region)...).CombinedOutput()
-	s := strings.TrimSpace(string(out))
+	out, err := exec.Command("aws", generateDBAuthTokenArgs(host, user, region)...).Output()
 	if err != nil {
-		return "", fmt.Errorf("auth token %s: %s", host, s)
+		return "", fmt.Errorf("auth token %s: %s", host, awsErrMsg(out, err))
 	}
+	s := strings.TrimSpace(string(out))
 	if s == "" {
 		return "", fmt.Errorf("auth token %s: empty", host)
 	}

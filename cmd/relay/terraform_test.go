@@ -398,3 +398,30 @@ func validClusterEnv() clusterEnv {
 		ConnectSGIds:             []string{"sg-1"},
 	}
 }
+
+func TestClusterEnv_checkClusterMatchesARN(t *testing.T) {
+	env := validClusterEnv()
+	env.MSKClusterARN = "arn:aws:kafka:us-east-1:111122223333:cluster/prod/abc-1"
+	if err := env.checkCluster("prod"); err != nil {
+		t.Fatal(err)
+	}
+	for _, cluster := range []string{"staging", "pro", "prod-2"} {
+		if err := env.checkCluster(cluster); err == nil {
+			t.Fatalf("cluster %q matched %s", cluster, env.MSKClusterARN)
+		}
+	}
+	env.MSKClusterARN = "arn:msk"
+	if err := env.checkCluster("prod"); err == nil {
+		t.Fatal("expected error for ARN without cluster name")
+	}
+}
+
+func TestParseApplyFlags_adopt(t *testing.T) {
+	_, env, err := parseApplyFlags([]string{"--adopt", "example/example.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.Adopt {
+		t.Fatal("expected Adopt")
+	}
+}

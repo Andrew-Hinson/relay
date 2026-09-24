@@ -493,3 +493,87 @@ func TestFormatConnection_omitsPassword(t *testing.T) {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+func TestCheckOwnership(t *testing.T) {
+	spec := validSpec()
+	mine := ownershipStamp(spec)
+	if mine != "relay:prod/acme" {
+		t.Fatalf("got stamp %q", mine)
+	}
+	cases := []struct {
+		name  string
+		live  liveSnapshot
+		adopt bool
+		want  string
+	}{
+		{"fresh instance", liveSnapshot{}, false, ""},
+		{"own objects", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": mine},
+			RoleStamps:     map[string]string{"acme_acmedb": mine, "acme_acmedb_cdc": mine},
+		}, false, ""},
+		{"database of another Config", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": "relay:prod/other"},
+		}, true, "belongs to relay:prod/other"},
+		{"role of another Config", liveSnapshot{
+			RoleStamps: map[string]string{"acme_acmedb_cdc": "relay:prod/other"},
+		}, true, "belongs to relay:prod/other"},
+		{"unstamped role refused", liveSnapshot{
+			RoleStamps: map[string]string{"acme_acmedb": ""},
+		}, false, "--adopt"},
+		{"unstamped database refused", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": ""},
+		}, false, "--adopt"},
+		{"unstamped adopted", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": ""},
+			DatabaseOwners: map[string]string{"acmedb": "acme_acmedb"},
+			RoleStamps:     map[string]string{"acme_acmedb": ""},
+		}, true, ""},
+		{"adopt refuses database owned by someone else", liveSnapshot{
+			Databases:      []string{"acmedb"},
+			DatabaseStamps: map[string]string{"acmedb": ""},
+			DatabaseOwners: map[string]string{"acmedb": "billing_team"},
+		}, true, "not owned by acme_acmedb"},
+		{"adopt refuses role without database", liveSnapshot{
+			RoleStamps: map[string]string{"acme_acmedb": ""},
+		}, true, "not owned by acme_acmedb"},
+	}
+	for _, c := range cases {
+		err := checkOwnership(spec, c.live, c.adopt)
+		if c.want == "" && err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Fatalf("%s: got %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
+func TestAdoptClaims_listsUnstampedOnly(t *testing.T) {
+	spec := validSpec()
+	live := liveSnapshot{
+		Databases:      []string{"acmedb"},
+		DatabaseStamps: map[string]string{"acmedb": ""},
+		DatabaseOwners: map[string]string{"acmedb": "acme_acmedb"},
+		RoleStamps:     map[string]string{"acme_acmedb": "", "acme_acmedb_cdc": ownershipStamp(spec)},
+	}
+	got := formatPlanDiff(planDiff{Adopt: adoptClaims(spec, live)})
+	want := "adopt\n  ~ database acmedb\n  ~ role acme_acmedb\n"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestFormatPlanDiff_adoptBeforeCreate(t *testing.T) {
+	got := formatPlanDiff(planDiff{
+		Adopt:  []planLine{{"role", "acme_acmedb"}},
+		Create: []planLine{{"table", "public.orders"}},
+	})
+	want := "adopt\n  ~ role acme_acmedb\n\ncreate\n  + table public.orders\n"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

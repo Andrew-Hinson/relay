@@ -13,12 +13,13 @@ Relay does not create a Cluster. `relay apply` attaches a Config to objects that
 | `{prefix}_{database}_cdc` | Postgres LOGIN | Apply | Debezium (`rds_iam`, `rds_replication`) |
 | Instance master (`relay` on create) | Postgres LOGIN | RDS / you | Apply SQL |
 
-Two customer-managed policies must exist before Apply:
+Three customer-managed policies must exist before Apply:
 
 | Policy | Attached to |
 | --- | --- |
 | `relay-connect-worker` | every Connect source role; attach to `relay-connect` too |
 | `relay-connect-source-boundary` | permissions boundary on every Connect source role |
+| `relay-connect-sink-boundary` | permissions boundary on `relay-connect` |
 
 ## Bootstrap
 
@@ -33,8 +34,8 @@ Do these once per account/region Cluster. Then set `RELAY_*` and run Apply.
    - Connect SG: egress 9098 to MSK, egress 5432 to RDS.
    - MSK SG: ingress 9098 from Connect SG and from the Apply host.
    - RDS SG: ingress 5432 from Connect SG and from the Apply host.
-7. Create `relay-connect-worker` and `relay-connect-source-boundary` (JSON below).
-8. Create `relay-connect`. Trust `kafkaconnect.amazonaws.com`. Attach worker + warehouse policies. Apply later puts `{prefix}-topics` inline on this role.
+7. Create `relay-connect-worker`, `relay-connect-source-boundary`, and `relay-connect-sink-boundary` (JSON below).
+8. Create `relay-connect` with `relay-connect-sink-boundary` as its permissions boundary. Trust `kafkaconnect.amazonaws.com`. Attach worker + warehouse policies. Apply later puts `{prefix}-topics` inline on this role.
 9. Create the Apply identity (JSON below). It must reach RDS:5432 from where you run the CLI.
 10. Export Cluster env. `relay apply` fails closed if any required value is missing.
 
@@ -61,7 +62,7 @@ Attach Instance extra: IAM database auth on, `rds.logical_replication=1`, `rds.i
 
 ## Cluster Connect role (`relay-connect`)
 
-Iceberg sink `service_execution_role_arn`. Apply does not create it. Apply does `iam:PutRolePolicy` on it, name `{prefix}-topics` (dots become dashes).
+Iceberg sink `service_execution_role_arn`. Apply does not create it. Apply does `iam:PutRolePolicy` on it, name `{prefix}-topics` (dots become dashes). Apply may only do so while `relay-connect-sink-boundary` is its boundary, so the Apply identity cannot use this role to escalate.
 
 Trust (confused-deputy conditions required by MSK Connect):
 
@@ -126,7 +127,7 @@ Attach `relay-connect-worker`. Add warehouse (not on the worker policy, or sourc
 
 If Lake Formation governs that Glue database, also `lakeformation:GetDataAccess` and LF insert/alter on the tables. IAM-only is enough when LF is not enforcing.
 
-Apply then adds, per Config prefix, the same Kafka data-plane as the source role: cluster Connect/Describe/WriteDataIdempotently; topic Create/Describe/Read/Write on `{prefix}*`; group Alter/Describe on `{prefix}*` and `connect-{prefix}*`. That covers `{prefix}.{schema}.{table}` and `{prefix}.control.iceberg`.
+Apply then adds, per Config prefix, the same Kafka data-plane as the source role: cluster Connect/Describe/WriteDataIdempotently; topic Create/Describe/Read/Write on `{prefix}.*`; group Alter/Describe on `{prefix}-*` and `connect-{prefix}-*`. That covers `{prefix}.{schema}.{table}` and `{prefix}.control.iceberg`. Wildcards are anchored on `.` / `-` so prefix `ex` never matches `example`.
 
 ## Worker policy (`relay-connect-worker`)
 
@@ -172,6 +173,56 @@ MSK Connect internals. Not in this repo's inline policies. AWS requires these on
 
 Terraform does not set connector log delivery. Add `logs:CreateLogGroup|CreateLogStream|PutLogEvents|DescribeLogGroups|DescribeLogStreams` on `/aws/msk-connect/*` if you enable it later.
 
+## Sink boundary (`relay-connect-sink-boundary`)
+
+Ceiling on `relay-connect`. Must allow everything that role actually uses (worker + every prefix's Kafka + warehouse). Whatever Apply writes inline, the role can never exceed this.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "MskThisCluster",
+      "Effect": "Allow",
+      "Action": "kafka-cluster:*",
+      "Resource": [
+        "arn:aws:kafka:REGION:ACCOUNT:cluster/prod/UUID",
+        "arn:aws:kafka:REGION:ACCOUNT:topic/prod/UUID/*",
+        "arn:aws:kafka:REGION:ACCOUNT:group/prod/UUID/*"
+      ]
+    },
+    {
+      "Sid": "GlueIceberg",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetDatabase",
+        "glue:GetDatabases",
+        "glue:GetTable",
+        "glue:GetTables",
+        "glue:UpdateTable",
+        "glue:GetPartition",
+        "glue:GetPartitions",
+        "glue:BatchCreatePartition",
+        "glue:BatchGetPartition"
+      ],
+      "Resource": [
+        "arn:aws:glue:REGION:ACCOUNT:catalog",
+        "arn:aws:glue:REGION:ACCOUNT:database/relay",
+        "arn:aws:glue:REGION:ACCOUNT:table/relay/*"
+      ]
+    },
+    {
+      "Sid": "Warehouse",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::relay-warehouse", "arn:aws:s3:::relay-warehouse/*"]
+    }
+  ]
+}
+```
+
+Add `lakeformation:GetDataAccess` here too if Lake Formation governs the Glue database.
+
 ## Source boundary (`relay-connect-source-boundary`)
 
 Ceiling on `relay-connect-{prefix}-cdc`. Must allow everything that role actually uses (worker + prefix Kafka + `rds-db:connect` as `*_cdc`). Must omit warehouse S3 and Glue.
@@ -207,10 +258,12 @@ Name `relay-connect-{prefix}-cdc` (`.` in prefix becomes `-`). Example Config `e
 - Trust: `kafkaconnect.amazonaws.com`, `aws:SourceAccount=ACCOUNT`, `aws:SourceArn=arn:aws:kafkaconnect:REGION:ACCOUNT:connector/{prefix}-{database}-cdc/*`
 - `permissions_boundary` = `relay-connect-source-boundary`
 - Attach `relay-connect-worker`
-- Inline `{prefix}-topics`: Kafka on `{prefix}*` topics and `{prefix}*` / `connect-{prefix}*` groups
+- Inline `{prefix}-topics`: Kafka on `{prefix}.*` topics and `{prefix}-*` / `connect-{prefix}-*` groups
 - Inline `{prefix}-rds`: `rds-db:connect` on `arn:aws:rds-db:REGION:ACCOUNT:dbuser:{instance-resource-id}/{prefix}_{database}_cdc`
 
 Only this role may connect as the CDC Postgres role.
+
+Debezium connects with `database.sslmode=require`: encrypted, but the RDS certificate is not verified. `relay` itself verifies (`verify-full` against the embedded RDS CA bundle). Moving Debezium to `verify-full` needs the RDS CA bundle in the Connect worker truststore.
 
 ## Apply identity
 
@@ -287,7 +340,12 @@ Whoever runs the CLI. AWS API plus a network path to RDS:5432.
       "Sid": "AclOnConnectRole",
       "Effect": "Allow",
       "Action": ["iam:GetRole", "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy"],
-      "Resource": "arn:aws:iam::ACCOUNT:role/relay-connect"
+      "Resource": "arn:aws:iam::ACCOUNT:role/relay-connect",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::ACCOUNT:policy/relay-connect-sink-boundary"
+        }
+      }
     },
     {
       "Sid": "PassConnectRoles",

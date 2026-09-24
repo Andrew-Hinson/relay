@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -26,6 +27,7 @@ type clusterEnv struct {
 	RDSEngineVersion         string
 	StateBucket              string
 	MigrateState             bool
+	Adopt                    bool
 }
 
 func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
@@ -50,6 +52,7 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 	engine := fs.String("rds-engine-version", envOr("RELAY_RDS_ENGINE_VERSION", "16"), "RDS engine version")
 	stateBucket := fs.String("state-bucket", envOr("RELAY_STATE_BUCKET", ""), "Cluster Terraform state bucket")
 	migrateState := fs.Bool("migrate-state", false, "one-shot copy of local terraform.tfstate to the Cluster state bucket")
+	adopt := fs.Bool("adopt", false, "one-shot claim of unstamped Postgres roles/database created before ownership stamps")
 	if err := fs.Parse(args); err != nil {
 		return "", clusterEnv{}, err
 	}
@@ -81,6 +84,7 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 		RDSEngineVersion:         *engine,
 		StateBucket:              *stateBucket,
 		MigrateState:             *migrateState,
+		Adopt:                    *adopt,
 	}
 	return file, env, nil
 }
@@ -120,6 +124,16 @@ func (e clusterEnv) validate(createInstance bool) error {
 	}
 	if len(e.RDSSGIds) == 0 {
 		return errors.New("--rds-sg-ids / RELAY_RDS_SG_IDS is required when instance.create")
+	}
+	return nil
+}
+
+// checkCluster requires the MSK cluster ARN (…:cluster/{name}/{uuid}) to name the Config's Cluster.
+func (e clusterEnv) checkCluster(cluster string) error {
+	_, rest, ok := strings.Cut(e.MSKClusterARN, ":cluster/")
+	name, _, _ := strings.Cut(rest, "/")
+	if !ok || name != cluster {
+		return fmt.Errorf("--msk-cluster-arn / RELAY_MSK_CLUSTER_ARN %q is not Cluster %q", e.MSKClusterARN, cluster)
 	}
 	return nil
 }

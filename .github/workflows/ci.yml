@@ -5,14 +5,17 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   go:
     runs-on: ubuntu-latest
     env:
       GO_MODULES: cmd/relay
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.27.0"
       - name: gofmt
@@ -24,12 +27,17 @@ jobs:
             go vet -C "$d" ./...
             go test -C "$d" ./...
           done
+      - name: govulncheck
+        run: |
+          for d in $GO_MODULES; do
+            go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -C "$d" ./...
+          done
 
   terraform:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.16.1
       - name: terraform fmt
