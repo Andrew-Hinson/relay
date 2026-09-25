@@ -10,9 +10,12 @@ go test -C cmd/relay ./...
 
 Run
 ```
+mkdir -p clusters && cp example/cluster.yaml clusters/prod.yaml   # once per Cluster; fill in real ARNs and IDs
 relay plan example/example.yaml
 relay apply example/example.yaml
 ```
+
+A Config's `cluster: prod` loads the Cluster profile `clusters/prod.yaml` (or `~/.config/relay/clusters/prod.yaml`). Flags and `RELAY_*` env vars override any field. Relay refuses to run if an ARN is in another account or region, or if your AWS credentials are for a different account than the profile.
 
 Apply shows the Terraform plan and the SQL it will run, then asks for `yes` before changing anything. It applies exactly the reviewed plan. In CI, pass `--yes`; without a terminal Apply refuses. Creating an Instance asks twice: once for the Instance, then for the rest.
 

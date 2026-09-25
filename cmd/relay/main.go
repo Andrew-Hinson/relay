@@ -43,11 +43,30 @@ func loadConfig(args []string) (configFile, clusterEnv, error) {
 	if err != nil {
 		return configFile{}, clusterEnv{}, err
 	}
+	profile, profilePath, err := findProfile(spec.Cluster)
+	if err != nil {
+		return configFile{}, clusterEnv{}, err
+	}
+	if profilePath != "" {
+		env.fillFrom(profile)
+	}
+	env.applyDefaults()
 	if err := env.validate(spec.Instance.Create); err != nil {
+		if profilePath == "" {
+			err = fmt.Errorf("%w (no Cluster profile found; add clusters/%s.yaml)", err, spec.Cluster)
+		}
 		return configFile{}, clusterEnv{}, err
 	}
 	if err := env.checkCluster(spec.Cluster); err != nil {
 		return configFile{}, clusterEnv{}, err
+	}
+	if err := env.checkARNs(); err != nil {
+		return configFile{}, clusterEnv{}, fmt.Errorf("%s: %w", profilePath, err)
+	}
+	if env.Account != "" {
+		if err := checkCallerAccount(env.Account, env.Region); err != nil {
+			return configFile{}, clusterEnv{}, err
+		}
 	}
 	return spec, env, nil
 }

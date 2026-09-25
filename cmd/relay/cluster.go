@@ -9,6 +9,7 @@ import (
 )
 
 type clusterEnv struct {
+	Account                  string
 	Region                   string
 	MSKBootstrap             string
 	MSKClusterARN            string
@@ -49,8 +50,8 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 	connectSGs := fs.String("connect-sg-ids", envOr("RELAY_CONNECT_SG_IDS", ""), "MSK Connect security group IDs (comma-separated)")
 	subnets := fs.String("subnet-ids", envOr("RELAY_SUBNET_IDS", ""), "RDS subnet IDs (comma-separated)")
 	rdsSGs := fs.String("rds-sg-ids", envOr("RELAY_RDS_SG_IDS", ""), "RDS security group IDs (comma-separated)")
-	class := fs.String("rds-instance-class", envOr("RELAY_RDS_INSTANCE_CLASS", "db.t3.medium"), "RDS instance class")
-	engine := fs.String("rds-engine-version", envOr("RELAY_RDS_ENGINE_VERSION", "16"), "RDS engine version")
+	class := fs.String("rds-instance-class", envOr("RELAY_RDS_INSTANCE_CLASS", ""), "RDS instance class (default "+defaultRDSInstanceClass+")")
+	engine := fs.String("rds-engine-version", envOr("RELAY_RDS_ENGINE_VERSION", ""), "RDS engine version (default "+defaultRDSEngineVersion+")")
 	stateBucket := fs.String("state-bucket", envOr("RELAY_STATE_BUCKET", ""), "Cluster Terraform state bucket")
 	migrateState := fs.Bool("migrate-state", false, "one-shot copy of local terraform.tfstate to the Cluster state bucket")
 	yes := fs.Bool("yes", false, "apply without the confirmation prompt")
@@ -90,6 +91,21 @@ func parseApplyFlags(args []string) (file string, env clusterEnv, err error) {
 		Yes:                      *yes,
 	}
 	return file, env, nil
+}
+
+const (
+	defaultRDSInstanceClass = "db.t3.medium"
+	defaultRDSEngineVersion = "16"
+)
+
+// applyDefaults runs after the Cluster profile so a profile can set these.
+func (e *clusterEnv) applyDefaults() {
+	if e.RDSInstanceClass == "" {
+		e.RDSInstanceClass = defaultRDSInstanceClass
+	}
+	if e.RDSEngineVersion == "" {
+		e.RDSEngineVersion = defaultRDSEngineVersion
+	}
 }
 
 func (e clusterEnv) validate(createInstance bool) error {
