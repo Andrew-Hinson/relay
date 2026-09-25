@@ -1,0 +1,32 @@
+# Cluster profile. Copy to clusters/{name}.yaml; Configs with `cluster: {name}` load it.
+# ARNs and IDs only, no secrets. Flags and RELAY_* env vars override any field.
+apiVersion: relay/v1
+kind: Cluster
+name: prod
+account: "111122223333"   # quoted: must stay a 12-digit string
+region: us-east-1
+
+msk:
+  cluster_arn: arn:aws:kafka:us-east-1:111122223333:cluster/prod/00000000-0000-0000-0000-000000000000-1
+  bootstrap_servers: b-1.prod.xxxxxx.c2.kafka.us-east-1.amazonaws.com:9098,b-2.prod.xxxxxx.c2.kafka.us-east-1.amazonaws.com:9098,b-3.prod.xxxxxx.c2.kafka.us-east-1.amazonaws.com:9098
+
+warehouse:
+  bucket: relay-warehouse
+  glue_database: relay
+state_bucket: relay-tfstate
+
+connect:
+  debezium_plugin_arn: arn:aws:kafkaconnect:us-east-1:111122223333:custom-plugin/debezium/00000000-0000-0000-0000-000000000000-1
+  iceberg_plugin_arn: arn:aws:kafkaconnect:us-east-1:111122223333:custom-plugin/iceberg/00000000-0000-0000-0000-000000000000-1
+  role_arn: arn:aws:iam::111122223333:role/relay-connect
+  source_boundary_arn: arn:aws:iam::111122223333:policy/relay-connect-source-boundary
+  worker_policy_arn: arn:aws:iam::111122223333:policy/relay-connect-worker
+  subnet_ids: [subnet-aaa, subnet-bbb]
+  sg_ids: [sg-connect]
+
+# only used when a Config has instance.create: true
+rds:
+  subnet_ids: [subnet-aaa, subnet-bbb]
+  sg_ids: [sg-rds]
+  instance_class: db.t3.medium
+  engine_version: "16"

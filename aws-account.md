@@ -23,7 +23,7 @@ Three customer-managed policies must exist before Apply:
 
 ## Bootstrap
 
-Do these once per account/region Cluster. Then set `RELAY_*` and run Apply.
+Do these once per account/region Cluster. Then write the Cluster profile and run Apply.
 
 1. VPC with 2+ private subnets. MSK, Connect, and RDS share it.
 2. MSK provisioned cluster, 3 brokers if you keep default `replicas: 3`. IAM auth on. TLS on. Save the IAM bootstrap broker string and cluster ARN.
@@ -37,7 +37,9 @@ Do these once per account/region Cluster. Then set `RELAY_*` and run Apply.
 7. Create `relay-connect-worker`, `relay-connect-source-boundary`, and `relay-connect-sink-boundary` (JSON below).
 8. Create `relay-connect` with `relay-connect-sink-boundary` as its permissions boundary. Trust `kafkaconnect.amazonaws.com`. Attach worker + warehouse policies. Apply later puts `{prefix}-topics` inline on this role.
 9. Create the Apply identity (JSON below). It must reach RDS:5432 from where you run the CLI.
-10. Export Cluster env. `relay apply` fails closed if any required value is missing.
+10. Write the Cluster profile `clusters/{cluster}.yaml` (see [example/cluster.yaml](example/cluster.yaml)) and commit it. It holds only ARNs and IDs. `relay apply` fails closed if any required value is missing, if an ARN is in another account or region, or if your credentials are for another account.
+
+Each field can also be set, or overridden, with a flag or env var:
 
 ```bash
 export RELAY_REGION=us-east-1
